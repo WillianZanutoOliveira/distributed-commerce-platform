@@ -34,6 +34,9 @@ The system models a checkout flow split across independently deployable services
 5. **Orders** reacts asynchronously to the final business outcome.
 6. **Notifications Service** consumes payment outcomes independently.
 
+
+Alongside checkout, the platform provides an **independent administrative individual/company registry (Customers)**, including CRUD, CPF/CNPJ validation, contacts, addresses, and postal-code lookup. It shares Keycloak and the Gateway but owns its own domain and database; registration does not automatically create Keycloak identities or join the Orders messaging flow.
+
 The project intentionally focuses on the hard parts of distributed systems rather than on UI work.
 
 ---
@@ -76,39 +79,82 @@ The goal is to make advanced backend engineering visible in a public portfolio:
 ## Architecture
 
 ```mermaid
-flowchart LR
-    Client[Client] --> Keycloak[Keycloak / OIDC]
-    Keycloak --> Gateway[YARP API Gateway]
-    Gateway --> Orders[Orders API]
-    Gateway --> Customers[Customers API / PF-PJ registry]
+flowchart TB
+    Client["Client / Administrator"]
+    subgraph Identity["Identity and access"]
+        Keycloak["Keycloak<br/>OIDC / OAuth 2.0"]
+    end
+    subgraph Edge["HTTP edge"]
+        Gateway["YARP API Gateway<br/>JWT + rate limiting"]
+    end
+    subgraph Services["Business services"]
+        Orders["Orders API<br/>Clean Architecture"]
+        Customers["Customers API<br/>Full PF / PJ CRUD<br/>Clean Architecture"]
+        Inventory["Inventory Service"]
+        Payments["Payments Service"]
+        Notifications["Notifications Service"]
+    end
+    subgraph Messaging["Messaging"]
+        Rabbit[(RabbitMQ<br/>MassTransit)]
+    end
+    subgraph Persistence["Database per service"]
+        ODB[(Orders PostgreSQL)]
+        CDB[(Customers PostgreSQL)]
+        IDB[(Inventory PostgreSQL)]
+        PDB[(Payments PostgreSQL)]
+    end
+    subgraph Secrets["Secrets and schema lifecycle"]
+        Vault["HashiCorp Vault<br/>Database Secrets Engine"]
+        Migrator["DatabaseMigrator<br/>EF Core Migrations"]
+    end
+    subgraph Observability["Observability"]
+        OTel["OpenTelemetry Collector"]
+        Tempo["Tempo"]
+        Prometheus["Prometheus"]
+        Grafana["Grafana"]
+    end
 
-    Orders --> ODB[(Orders PostgreSQL)]
-    Customers --> CDB[(Customers PostgreSQL)]
-    Customers -->|CEP v2| BrasilAPI[BrasilAPI]
-    Orders -- OrderSubmitted --> Rabbit[(RabbitMQ)]
+    Client -->|"login"| Keycloak
+    Keycloak -->|"access token JWT"| Client
+    Client -->|"Bearer JWT"| Gateway
+    Gateway -->|"validated JWT"| Orders
+    Gateway -->|"admin JWT: PF/PJ CRUD and CEP"| Customers
 
-    Rabbit --> Inventory[Inventory Service]
-    Inventory --> IDB[(Inventory PostgreSQL)]
-    Inventory -- InventoryReserved / InventoryRejected --> Rabbit
-
-    Rabbit --> Payments[Payments Service]
-    Payments --> PDB[(Payments PostgreSQL)]
-    Payments -- PaymentAuthorized / PaymentFailed --> Rabbit
-
+    Orders --> ODB
+    Customers -->|"CPF/CNPJ, contacts, addresses"| CDB
+    Customers -->|"postal code only"| BrasilAPI["BrasilAPI CEP v2"]
+    Orders -->|"OrderSubmitted"| Rabbit
+    Rabbit --> Inventory
+    Inventory --> IDB
+    Inventory -->|"InventoryReserved / InventoryRejected"| Rabbit
+    Rabbit --> Payments
+    Payments --> PDB
+    Payments -->|"PaymentAuthorized / PaymentFailed"| Rabbit
     Rabbit --> Orders
-    Rabbit --> Notifications[Notifications Service]
+    Rabbit --> Notifications
 
-    Vault[HashiCorp Vault] -. secrets .-> Orders
-    Vault -. secrets .-> Inventory
-    Vault -. secrets .-> Payments
-    Vault -. secrets .-> Notifications
+    Vault -. "runtime credentials" .-> Orders
+    Vault -. "runtime credentials" .-> Customers
+    Vault -. "runtime credentials" .-> Inventory
+    Vault -. "runtime credentials" .-> Payments
+    Vault -. "RabbitMQ secret" .-> Notifications
+    Vault -. "migration credential" .-> Migrator
+    Migrator -. "EF Core migrations" .-> ODB
+    Migrator -. "EF Core migrations" .-> CDB
+    Migrator -. "EF Core migrations" .-> IDB
+    Migrator -. "EF Core migrations" .-> PDB
 
-    Orders -. traces/metrics .-> OTel[OpenTelemetry]
-    Inventory -. traces/metrics .-> OTel
-    Payments -. traces/metrics .-> OTel
-    Notifications -. traces/metrics .-> OTel
+    Gateway -. "OTLP" .-> OTel
+    Orders -. "OTLP" .-> OTel
+    Customers -. "OTLP" .-> OTel
+    Inventory -. "OTLP" .-> OTel
+    Payments -. "OTLP" .-> OTel
+    Notifications -. "OTLP" .-> OTel
+    OTel --> Tempo
+    OTel --> Prometheus
+    Tempo --> Grafana
+    Prometheus --> Grafana
 ```
-
 More detail: [Architecture documentation](docs/architecture.en.md) · [platform technical walkthrough](docs/technical-walkthrough.en.md)
 
 ---
@@ -225,22 +271,127 @@ Authentication is synchronous only at the HTTP edge. Collaboration between busin
 
 ## Individual/company registry and addresses
 
-The **Customers** bounded context provides a complete admin-only CRUD without sharing the Orders database:
+The **Customers** microservice provides a **complete CRUD for individuals (PF) and companies (PJ)** as an administrative bounded context independent of Orders. It follows Clean Architecture (`Customers.Domain`, `Customers.Application`, `Customers.Infrastructure`, and `Customers.Api`), owns its PostgreSQL database, and exposes its API through the **YARP Gateway**. The architecture diagram above includes Customers, Keycloak, BrasilAPI, Vault, and its dedicated database.
 
-| Method | Route | Purpose |
+
+### Individual/company registration journey
+
+```mermaid
+flowchart LR
+    Admin["Administrator"] -->|"login"| KC["Keycloak OIDC"]
+    KC -->|"access token with admin role"| Admin
+    Admin -->|"Bearer JWT"| GW["YARP Gateway"]
+    GW -->|"routes /api/customers"| API["Customers API<br/>JWT and admin RBAC"]
+    API --> APP["Customers.Application<br/>PF / PJ CRUD"]
+    APP --> MODEL["Customer aggregate<br/>CPF or CNPJ, contacts,<br/>1 to 10 addresses"]
+    APP -->|"EF Core repository"| DB[("Customers PostgreSQL")]
+    APP -->|"IPostalCodeLookup"| CEP["BrasilAPI v2 adapter"]
+    CEP -->|"postal code only"| BRA["BrasilAPI CEP v2"]
+    VAULT["Vault: dynamic credentials"] -.-> API
+```
+
+Registration is **synchronous and separate from the order journey**: the API validates CPF/CNPJ locally, applies aggregate invariants, and persists exclusively in Customers' database. Postal-code lookup only returns address suggestions; it does not automatically save them. Customers validates the `admin` role again. There is no automatic Keycloak-user provisioning or Orders association. See the [detailed architecture flow](docs/architecture.en.md#individual-and-company-registration-flow).
+
+### Available operations
+
+| Method | Public route (Gateway) | Result and purpose |
 | --- | --- | --- |
-| `POST` | `/api/customers` | create an individual or company |
-| `GET` | `/api/customers/{id}` | retrieve by id |
-| `GET` | `/api/customers` | paginate/filter by text, document and person type |
-| `PUT` | `/api/customers/{id}` | update registration, status and addresses |
-| `DELETE` | `/api/customers/{id}` | delete the aggregate |
-| `GET` | `/api/customers/address/cep/{cep}` | resolve a Brazilian postal code via BrasilAPI v2 |
+| `POST` | `/api/customers` | `201 Created` — create an individual or company with addresses |
+| `GET` | `/api/customers/{id}` | `200 OK` / `404 Not Found` — retrieve by GUID |
+| `GET` | `/api/customers` | `200 OK` — paginated, filtered search |
+| `PUT` | `/api/customers/{id}` | `200 OK` / `404 Not Found` — replace details and addresses; activate/deactivate |
+| `DELETE` | `/api/customers/{id}` | `204 No Content` / `404 Not Found` — **physical deletion** of the aggregate |
+| `GET` | `/api/customers/address/cep/{cep}` | `200 OK` / `404 Not Found` / `503 Service Unavailable` — BrasilAPI v2 postal-code lookup |
 
-The model distinguishes `Individual` and `Company`, validates CPF/CNPJ check digits locally, normalizes documents/phones, and requires 1–10 addresses with exactly one primary address. Documents are unique in PostgreSQL. CPF/CNPJ values are **never sent to third-party services**; only the postal code is externally resolved.
+Search supports `search` (text), `document` (CPF/CNPJ), `personType` (`Individual` or `Company`), `page`, and `pageSize`. Defaults are page 1 and 20 results per page, capped at 100. The response contains `items`, `page`, `pageSize`, `totalCount`, and `totalPages`.
 
-BrasilAPI v2 is hidden behind `IPostalCodeLookup`, so the domain is provider-agnostic. The typed HTTP client inherits Service Defaults resilience; provider failures map to `503`, unknown CEPs to `404`, and coordinates are optional.
+### Registry fields and validation rules
 
-See [ADR-0013](docs/adr/0013-customers-pf-pj-brasilapi-cep.en.md).
+| Entity | Fields and constraints |
+| --- | --- |
+| **Individual — `Individual`** | `document` (valid CPF), `displayName` (name), `birthDate` (optional, before today), `email`, `phone`, and `addresses`. Company-only fields are rejected. |
+| **Company — `Company`** | `document` (valid CNPJ), `displayName` (trade name), `legalName` (required legal name), `foundationDate` (optional, not in the future), `stateRegistration` and `municipalRegistration` (optional), `email`, `phone`, and `addresses`. |
+| **Addresses (both types)** | **1–10** per registration, with **exactly one `isPrimary: true`**. Fields: `type` (`Primary`, `Billing`, `Shipping`, or `Other`), `postalCode`, `street`, `number`, `city`, and `state`; optional: `complement`, `neighborhood`, `ibgeCityCode`, `latitude`, and `longitude`. |
+
+CPF/CNPJ values are normalized, check-digit validated, and protected by a unique database index (`409 Conflict` for duplicates). Postal codes are normalized to eight digits, state abbreviations to two letters, email is validated, and phone numbers are normalized. **Person type is immutable** after creation. `PUT` requires the complete registration, including the full address collection and `isActive`; `DELETE` physically removes the registration whereas `isActive: false` merely deactivates it.
+
+### API creation examples
+
+These are **fictional development fixtures**, not real registrations. Every request requires a **Keycloak JWT with the `admin` role**, validated again by Customers. A `customer` token cannot read or modify registrations. Examples assume the local Gateway at `http://localhost:8080` and a valid administrative JWT in `ADMIN_TOKEN`.
+
+**Individual:**
+
+```bash
+curl -i -X POST http://localhost:8080/api/customers \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "personType": "Individual",
+    "document": "111.444.777-35",
+    "displayName": "Example Person",
+    "birthDate": "1990-01-01",
+    "email": "pf@example.invalid",
+    "phone": "(44) 99999-0000",
+    "addresses": [{
+      "type": "Primary",
+      "isPrimary": true,
+      "postalCode": "87000-000",
+      "street": "Example Street",
+      "number": "100",
+      "neighborhood": "Centro",
+      "city": "Maringa",
+      "state": "PR"
+    }]
+  }'
+```
+
+**Company:**
+
+```bash
+curl -i -X POST http://localhost:8080/api/customers \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "personType": "Company",
+    "document": "11.222.333/0001-81",
+    "displayName": "Example Company",
+    "legalName": "Example Company LTDA",
+    "foundationDate": "2020-01-01",
+    "stateRegistration": "ISENTO",
+    "email": "pj@example.invalid",
+    "phone": "44999990000",
+    "addresses": [{
+      "type": "Primary",
+      "isPrimary": true,
+      "postalCode": "87000-000",
+      "street": "Example Avenue",
+      "number": "200",
+      "city": "Maringa",
+      "state": "PR"
+    }]
+  }'
+```
+
+**Search, filtering, and postal-code lookup:**
+
+```bash
+curl -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "http://localhost:8080/api/customers?personType=Individual&page=1&pageSize=10"
+
+curl -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "http://localhost:8080/api/customers/address/cep/01001000"
+```
+
+Postal-code `GET` uses **BrasilAPI CEP v2** through the `IPostalCodeLookup` application port and a resilient, time-limited HTTP client. Its response may contain street, neighborhood, city, state, IBGE city code, and **optional** coordinates. Lookup does not automatically persist an address. Only postal codes go to BrasilAPI — **never CPF/CNPJ**. Provider failures return `503`; unknown postal codes return `404`.
+
+### Security, persistence, and tests
+
+- **Keycloak + RBAC:** every Customers route, including postal-code lookup, requires the `admin` role; both Gateway and API validate JWTs. Missing authentication returns `401`, insufficient permissions `403`, and invalid data results in `400` validation responses.
+- **Isolation and credentials:** a dedicated Customers PostgreSQL database; EF Core Migrations use a `customers_migrator` identity (DDL), separate from the `customers_runtime` identity (DML). Vault supplies dynamic credentials for the secure runtime.
+- **Local execution:** Customers participates in .NET Aspire and Docker Compose. Follow the [local development guide](docs/local-development.en.md) to start Keycloak, Vault, Gateway, and dependencies.
+- **Automated checks:** with local infrastructure running, execute `bash scripts/customers-smoke.sh` (requires `curl` and `jq`, uses the local fixture user `demo-admin`). This tests PF/PJ CRUD through the Gateway, authorization, address replacement, pagination, duplicate documents, and deletion. Domain, infrastructure, and persistence regression tests are also available.
+
+**Current boundaries:** this is an **administrative API**, not a ready-made user-facing web UI; creating a customer does not automatically provision a Keycloak identity or attach the registration to an Orders order. See [ADR-0013](docs/adr/0013-customers-pf-pj-brasilapi-cep.en.md), [architecture](docs/architecture.en.md), and [security posture](docs/security-posture.en.md) for the design and security decisions.
 
 ---
 

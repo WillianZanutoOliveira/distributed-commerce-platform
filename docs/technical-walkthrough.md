@@ -16,24 +16,26 @@ Comece pela visão macro:
 - [YARP Gateway](../src/Gateway/ApiGateway/Program.cs)
 - [Contratos de eventos](../src/BuildingBlocks/Contracts/IntegrationEvents.cs)
 
-Fluxo de entrada:
+Fluxo de entrada (checkout e cadastro administrativo em caminhos independentes):
 
 ```text
-Cliente
-  |
-  v
-Keycloak
-  | JWT
-  v
-YARP API Gateway
-  | JWT validado + rate limiting
-  v
-Orders API
-  | JWT validado novamente + object authorization
-  v
-caso de uso
+Usuário / Administrador
+         |
+         v
+      Keycloak (JWT e roles)
+         |
+         v
+   YARP API Gateway
+   (validação JWT e rate limiting)
+         |
+         +----> Orders API: JWT + ownership --> Checkout / RabbitMQ
+         |
+         +----> Customers API: JWT + role admin --> CRUD PF/PJ
+                                                    |
+                                       Customers PostgreSQL
+                                                    |
+                               Busca CEP opcional --> BrasilAPI v2
 ```
-
 Depois do comando HTTP, a colaboração entre os quatro serviços de negócio permanece assíncrona:
 
 - Orders
@@ -218,7 +220,7 @@ Docker Compose continua sendo o caminho de paridade exercitado pelo CI.
 - [Smoke autenticado PF/PJ](../scripts/customers-smoke.sh)
 - [ADR-0013 — cadastro PF/PJ e CEP](./adr/0013-customers-pf-pj-brasilapi-cep.md)
 
-A rota `/api/customers` é protegida por role `admin` no Gateway e no serviço, com PostgreSQL dedicado e credenciais dinâmicas de runtime separadas das de migration. O adapter envia **somente o CEP** à BrasilAPI; CPF/CNPJ são validados localmente. O CI exercita o CRUD e valida o snapshot das migrations, além de analisar as APIs com ZAP autenticado.
+A rota `/api/customers` é protegida por role `admin` no Gateway e no serviço, com PostgreSQL dedicado e credenciais dinâmicas de runtime separadas das de migration. A API expõe `POST`, `GET` (lista e detalhe), `PUT`, `DELETE` e consulta de CEP, suportando CPF (`Individual`) e CNPJ (`Company`), contatos e de 1 a 10 endereços com exatamente um principal. Veja o [diagrama da jornada de cadastro](./architecture.md#fluxo-do-cadastro-de-pessoas-pf-e-pj). O adapter envia **somente o CEP** à BrasilAPI; CPF/CNPJ são validados localmente. O CI exercita o CRUD e valida o snapshot das migrations, além de analisar as APIs com ZAP autenticado.
 
 ## 9. Automação de engenharia com IA
 

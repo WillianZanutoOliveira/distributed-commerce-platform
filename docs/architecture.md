@@ -4,7 +4,7 @@
 
 ## Objetivo do sistema
 
-O Distributed Commerce Platform é uma arquitetura de referência para uma jornada transacional de checkout implementada com serviços .NET implantáveis de forma independente.
+O Distributed Commerce Platform é uma arquitetura de referência para uma jornada transacional de checkout **e para cadastro administrativo de pessoas físicas e jurídicas** implementada com serviços .NET implantáveis de forma independente.
 
 O projeto foi desenhado intencionalmente em torno de preocupações arquiteturais relevantes em nível sênior/lead:
 
@@ -35,7 +35,7 @@ flowchart TB
 
     subgraph Business["Bounded contexts"]
         Orders[Orders API]
-        Customers[Customers API]
+        Customers[Customers API<br/>CRUD PF e PJ]
         Inventory[Inventory Service]
         Payments[Payments Service]
         Notifications[Notifications Service]
@@ -68,11 +68,11 @@ flowchart TB
     Keycloak -->|"JWT access token"| Client
     Client -->|"Bearer JWT"| Gateway
     Gateway -->|"JWT validado"| Orders
-    Gateway -->|"admin JWT"| Customers
+    Gateway -->|"JWT admin / CRUD PF-PJ"| Customers
 
     Orders --> OrdersDb
-    Customers --> CustomersDb
-    Customers -->|"CEP v2"| BrasilAPI[BrasilAPI]
+    Customers -->|"CPF/CNPJ e endereços"| CustomersDb
+    Customers -->|"somente CEP"| BrasilAPI[BrasilAPI CEP v2]
     Orders -->|"OrderSubmitted"| Rabbit
     Rabbit --> Inventory
     Inventory --> InventoryDb
@@ -110,6 +110,32 @@ flowchart TB
 
 O caminho síncrono do checkout termina em Orders. O cadastro administrativo segue um caminho independente Gateway → Customers; a colaboração do checkout entre bounded contexts continua assíncrona por RabbitMQ.
 
+
+
+## Fluxo do cadastro de pessoas PF e PJ
+
+O caminho de cadastro é **HTTP síncrono**, independente da orquestração assíncrona de pedidos. O administrador autentica-se no Keycloak e acessa as rotas `/api/customers` por meio do YARP; **Gateway e Customers.Api validam JWT**, e todas as operações, inclusive a consulta de CEP, exigem a role `admin`.
+
+```mermaid
+flowchart LR
+    Admin["Administrador"] -->|"login"| KC["Keycloak<br/>OIDC / role admin"]
+    KC -->|"JWT"| Admin
+    Admin -->|"Bearer JWT"| GW["YARP Gateway<br/>autenticação e rate limiting"]
+    GW -->|"CRUD /api/customers"| API["Customers.Api<br/>revalida JWT + admin"]
+    API --> APP["Customers.Application<br/>CRUD, pesquisa e CEP"]
+    APP --> DOM["Customers.Domain<br/>Individual / Company<br/>invariantes e validação CPF/CNPJ"]
+    APP -->|"ICustomerRepository"| INF["Customers.Infrastructure<br/>EF Core"]
+    INF --> DB[("Customers PostgreSQL<br/>cadastros e endereços")]
+    APP -->|"IPostalCodeLookup"| ADAPTER["Adapter BrasilAPI CEP v2"]
+    ADAPTER -->|"somente CEP"| BR["BrasilAPI<br/>CEP v2"]
+    VAULT["HashiCorp Vault<br/>credenciais dinâmicas"] -. "runtime DML" .-> INF
+    VAULT -. "migration DDL" .-> MIG["DatabaseMigrator<br/>EF Core"]
+    MIG --> DB
+```
+
+**Regras e limites:** `Individual` usa CPF e `Company` usa CNPJ; ambos possuem dados de contato e de **1 a 10 endereços, exatamente um principal**. O documento é validado localmente por dígito verificador e possui índice único. A consulta externa usa apenas o CEP de oito dígitos e pode retornar logradouro, cidade, UF, IBGE e coordenadas opcionais; ela **não persiste** endereço por conta própria. Os comandos de atualização substituem a coleção de endereços; `isActive: false` inativa o cadastro, enquanto `DELETE` o remove fisicamente.
+
+Os dados pessoais permanecem no PostgreSQL de Customers, protegido por credenciais de runtime distintas da identidade de migração. O agregado de cadastro não é vinculado automaticamente à claim `sub` dos pedidos de Orders, nem provisiona usuário no Keycloak. Para contratos HTTP e exemplos, veja o [README principal](../README.md#cadastro-pfpj-e-endereços), os [endpoints da API](../src/Services/Customers/Customers.Api/CustomerEndpoints.cs), a [ADR-0013](adr/0013-customers-pf-pj-brasilapi-cep.md) e o [smoke de PF/PJ](../scripts/customers-smoke.sh).
 
 ## Limites
 
@@ -278,7 +304,7 @@ Cliente
         caso de uso
 ```
 
-A validação acontece em duas camadas de propósito: Gateway e Orders. Isso fornece defesa em profundidade e evita que o serviço confie implicitamente no proxy.
+A validação acontece em duas camadas de propósito: Gateway e o serviço de destino (**Orders ou Customers**). Isso fornece defesa em profundidade e evita que o serviço confie implicitamente no proxy. Customers também exige a role `admin` em todas as rotas; a claim `sub` é usada para autorização de pedidos em Orders, não como chave automática do cadastro de pessoas.
 
 A identidade de negócio é derivada da claim `sub`; `CustomerId` não é aceito como autoridade no payload. Realm roles alimentam RBAC, e consultas de pedido verificam object-level authorization. Apenas a role administrativa possui bypass explícito de ownership.
 

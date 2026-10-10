@@ -16,24 +16,26 @@ Start with the high-level path:
 - [YARP Gateway](../src/Gateway/ApiGateway/Program.cs)
 - [Integration event contracts](../src/BuildingBlocks/Contracts/IntegrationEvents.cs)
 
-Ingress flow:
+Ingress flow (separate checkout and administrative registration paths):
 
 ```text
-Client
-  |
-  v
-Keycloak
-  | JWT
-  v
-YARP API Gateway
-  | validated JWT + rate limiting
-  v
-Orders API
-  | validates JWT again + object authorization
-  v
-use case
+User / Administrator
+         |
+         v
+      Keycloak (JWT and roles)
+         |
+         v
+   YARP API Gateway
+   (JWT validation and rate limiting)
+         |
+         +----> Orders API: JWT + ownership --> Checkout / RabbitMQ
+         |
+         +----> Customers API: JWT + admin role --> PF/PJ CRUD
+                                                     |
+                                        Customers PostgreSQL
+                                                     |
+                              Optional CEP lookup --> BrasilAPI v2
 ```
-
 After the HTTP command, collaboration between the four business services remains asynchronous:
 
 - Orders
@@ -218,7 +220,7 @@ Docker Compose remains the CI-tested parity path.
 - [Authenticated PF/PJ smoke script](../scripts/customers-smoke.sh)
 - [ADR-0013 — PF/PJ registry and CEP](./adr/0013-customers-pf-pj-brasilapi-cep.en.md)
 
-`/api/customers` requires an `admin` role in both Gateway and service, with a dedicated PostgreSQL database and separate dynamic runtime/migration identities. The adapter sends **only the postal code** to BrasilAPI; CPF/CNPJ remain locally validated. CI exercises CRUD and migration-model consistency; authenticated ZAP scans both APIs.
+`/api/customers` requires an `admin` role in both Gateway and service, with a dedicated PostgreSQL database and separate dynamic runtime/migration identities. The API exposes `POST`, `GET` (list/detail), `PUT`, `DELETE`, and postal-code lookup for CPF (`Individual`) and CNPJ (`Company`) registrations, contacts and 1–10 addresses with exactly one primary. See the [registration journey diagram](./architecture.en.md#individual-and-company-registration-flow). The adapter sends **only the postal code** to BrasilAPI; CPF/CNPJ remain locally validated. CI exercises CRUD and migration-model consistency; authenticated ZAP scans both APIs.
 
 ## 9. AI engineering automation
 

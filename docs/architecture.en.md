@@ -4,7 +4,7 @@
 
 ## System goal
 
-Distributed Commerce Platform is a reference architecture for a transactional checkout journey implemented with independently deployable .NET services.
+Distributed Commerce Platform is a reference architecture for a transactional checkout journey **and administrative individual/company registration** implemented with independently deployable .NET services.
 
 It is deliberately designed around architectural concerns that become important at senior/lead level:
 
@@ -35,7 +35,7 @@ flowchart TB
 
     subgraph Business["Bounded contexts"]
         Orders[Orders API]
-        Customers[Customers API]
+        Customers[Customers API<br/>Full PF / PJ CRUD]
         Inventory[Inventory Service]
         Payments[Payments Service]
         Notifications[Notifications Service]
@@ -68,11 +68,11 @@ flowchart TB
     Keycloak -->|"JWT access token"| Client
     Client -->|"Bearer JWT"| Gateway
     Gateway -->|"validated JWT"| Orders
-    Gateway -->|"admin JWT"| Customers
+    Gateway -->|"admin JWT / PF-PJ CRUD"| Customers
 
     Orders --> OrdersDb
-    Customers --> CustomersDb
-    Customers -->|"CEP v2"| BrasilAPI[BrasilAPI]
+    Customers -->|"CPF/CNPJ and addresses"| CustomersDb
+    Customers -->|"postal code only"| BrasilAPI[BrasilAPI CEP v2]
     Orders -->|"OrderSubmitted"| Rabbit
     Rabbit --> Inventory
     Inventory --> InventoryDb
@@ -110,6 +110,32 @@ flowchart TB
 
 The synchronous checkout path ends at Orders. Administrative registration follows an independent Gateway → Customers path; checkout collaboration between bounded contexts remains asynchronous through RabbitMQ.
 
+
+
+## Individual and company registration flow
+
+Registration is **synchronous over HTTP**, independent of the asynchronous order workflow. An administrator authenticates with Keycloak and calls `/api/customers` via YARP; **both the Gateway and Customers.Api validate JWTs**, and every operation, including postal-code lookup, requires the `admin` role.
+
+```mermaid
+flowchart LR
+    Admin["Administrator"] -->|"login"| KC["Keycloak<br/>OIDC / admin role"]
+    KC -->|"JWT"| Admin
+    Admin -->|"Bearer JWT"| GW["YARP Gateway<br/>authentication and rate limiting"]
+    GW -->|"CRUD /api/customers"| API["Customers.Api<br/>JWT + admin revalidation"]
+    API --> APP["Customers.Application<br/>CRUD, search and postal lookup"]
+    APP --> DOM["Customers.Domain<br/>Individual / Company<br/>CPF/CNPJ checks and invariants"]
+    APP -->|"ICustomerRepository"| INF["Customers.Infrastructure<br/>EF Core"]
+    INF --> DB[("Customers PostgreSQL<br/>registrations and addresses")]
+    APP -->|"IPostalCodeLookup"| ADAPTER["BrasilAPI CEP v2 adapter"]
+    ADAPTER -->|"postal code only"| BR["BrasilAPI<br/>CEP v2"]
+    VAULT["HashiCorp Vault<br/>dynamic credentials"] -. "runtime DML" .-> INF
+    VAULT -. "migration DDL" .-> MIG["DatabaseMigrator<br/>EF Core"]
+    MIG --> DB
+```
+
+**Rules and boundaries:** `Individual` uses CPF and `Company` uses CNPJ; both hold contact information and **1–10 addresses, exactly one primary**. Document check digits are validated locally and a unique index prevents duplicates. Only the eight-digit postal code is sent outside the platform; the provider may return street, city, state, IBGE, and optional coordinates. Lookup **does not persist** the suggested address. Updates replace the address collection; `isActive: false` deactivates a registration, whereas `DELETE` physically removes it.
+
+Personal data stays in the dedicated Customers PostgreSQL database, secured with separate runtime and migration credentials. Registrations are not automatically associated with Orders' `sub` claim and do not provision a Keycloak user. For HTTP contracts and examples, see the [main README](../README.en.md#individualcompany-registry-and-addresses), [API endpoints](../src/Services/Customers/Customers.Api/CustomerEndpoints.cs), [ADR-0013](adr/0013-customers-pf-pj-brasilapi-cep.en.md), and [PF/PJ smoke script](../scripts/customers-smoke.sh).
 
 ## Boundaries
 
@@ -278,7 +304,7 @@ Client
         use case
 ```
 
-JWT validation intentionally happens at both Gateway and Orders. This defense-in-depth model prevents the service from implicitly trusting the proxy.
+JWT validation intentionally happens at both the Gateway and the destination service (**Orders or Customers**). This defense-in-depth model prevents the service from implicitly trusting the proxy. Customers additionally requires the `admin` role on every route; the `sub` claim is used for Orders authorization rather than automatic identity matching for individual/company registrations.
 
 Business identity comes from the `sub` claim; `CustomerId` is not trusted from the request payload. Realm roles drive RBAC, while order reads enforce object-level authorization. Only the admin role has an explicit ownership bypass.
 
