@@ -26,7 +26,7 @@ flowchart LR
 | `validate` | `contents: read`; importa o patch em runner independente, aplica um guard confiável copiado **antes** do patch e executa Python, restore, build Release, testes, formatação, segurança estática e Compose |
 | `publish` | `contents: write`, `pull-requests: write` e `actions: write`; verifica o SHA-256 do mesmo patch e o guard, cria uma branch e um PR e solicita CI, Security e DAST; **não faz merge** |
 
-Actions de terceiros são referenciadas por SHA fixo. A execução é manual, serializada por repositório e limitada a tarefas pequenas. O artefato patch fica retido por três dias; o fluxo não possui deploy em produção.
+Actions de terceiros são referenciadas por SHA fixo. O harness aceita disparo manual e também poderá ser solicitado pela ponte GitHub descrita abaixo, após aprovação da governança; a execução continua serializada por repositório e limitada a tarefas pequenas. O artefato patch fica retido por três dias; o fluxo não possui deploy em produção.
 
 ## Preparação no GitHub
 
@@ -56,7 +56,7 @@ O endpoint oficial do GitHub utilizado é `POST /repos/{owner}/{repo}/actions/wo
 1. Abra [Actions → AI Evolution Harness](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/workflows/ai-evolution.yml), selecione **Run workflow**, escolha `main` e informe a tarefa:
 
    ```text
-   Crie somente docs/ai-first-smoke-test.md e docs/ai-first-smoke-test.en.md,
+   Crie somente docs/ai-first-github-bridge-smoke.md e docs/ai-first-github-bridge-smoke.en.md,
    explicando em português e inglês que este é um teste inofensivo do fluxo
    AI-First. Não altere outros arquivos, não inclua dados privados e não faça merge.
    ```
