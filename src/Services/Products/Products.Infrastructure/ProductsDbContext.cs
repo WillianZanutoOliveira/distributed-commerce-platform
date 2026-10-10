@@ -43,7 +43,7 @@ public sealed class ProductsDbContext(DbContextOptions<ProductsDbContext> option
         }
         catch (DbUpdateException exception)
             when (exception.InnerException is PostgresException
-                { SqlState: PostgresErrorCodes.UniqueViolation })
+            { SqlState: PostgresErrorCodes.UniqueViolation })
         {
             throw new DuplicateProductIdentifierException();
         }
