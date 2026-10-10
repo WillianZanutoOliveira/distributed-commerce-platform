@@ -37,6 +37,8 @@ services:
         condition: service_healthy
       customers-db:
         condition: service_healthy
+      products-db:
+        condition: service_healthy
     volumes:
       - ./deploy/vault/vault-init.sh:/bootstrap/vault-init.sh:ro
       - vault-orders-token:/tokens/orders
@@ -48,6 +50,8 @@ services:
       - vault-payments-migrator-token:/tokens/payments-migrator
       - vault-customers-token:/tokens/customers
       - vault-customers-migrator-token:/tokens/customers-migrator
+      - vault-products-token:/tokens/products
+      - vault-products-migrator-token:/tokens/products-migrator
 
   orders-db:
     volumes:
@@ -64,6 +68,10 @@ services:
   customers-db:
     volumes:
       - ./deploy/postgres/customers-init.sql:/docker-entrypoint-initdb.d/10-runtime-role.sql:ro
+
+  products-db:
+    volumes:
+      - ./deploy/postgres/products-init.sql:/docker-entrypoint-initdb.d/10-runtime-role.sql:ro
 
   orders-migrator:
     read_only: true
@@ -161,6 +169,30 @@ services:
     volumes:
       - vault-customers-migrator-token:/run/vault:ro
 
+  products-migrator:
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    environment:
+      ConnectionStrings__products-db: ""
+      Vault__Address: "http://vault:8200"
+      Vault__TokenFile: "/run/vault/token"
+      Vault__DatabaseRole: "products-migration"
+      Vault__DatabaseConnectionStringName: "products-db"
+      Vault__DatabaseHost: "products-db"
+      Vault__DatabasePort: "5432"
+      Vault__DatabaseName: "products"
+      Vault__DatabaseRuntimeRole: "products_migrator"
+    depends_on:
+      vault-init:
+        condition: service_completed_successfully
+    volumes:
+      - vault-products-migrator-token:/run/vault:ro
+
   api-gateway:
     read_only: true
     cap_drop:
@@ -169,6 +201,33 @@ services:
       - no-new-privileges:true
     tmpfs:
       - /tmp:size=64m,mode=1777
+
+  products-api:
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    environment:
+      ConnectionStrings__products-db: ""
+      Vault__Address: "http://vault:8200"
+      Vault__TokenFile: "/run/vault/token"
+      Vault__DatabaseRole: "products-app"
+      Vault__DatabaseConnectionStringName: "products-db"
+      Vault__DatabaseHost: "products-db"
+      Vault__DatabasePort: "5432"
+      Vault__DatabaseName: "products"
+      Vault__DatabaseRuntimeRole: "products_runtime"
+      Vault__LeaseRenewalIntervalSeconds: "5"
+    depends_on:
+      vault-init:
+        condition: service_completed_successfully
+      products-migrator:
+        condition: service_completed_successfully
+    volumes:
+      - vault-products-token:/run/vault:ro
 
   customers-api:
     read_only: true
@@ -317,3 +376,5 @@ volumes:
   vault-payments-migrator-token:
   vault-customers-token:
   vault-customers-migrator-token:
+  vault-products-token:
+  vault-products-migrator-token:

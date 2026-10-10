@@ -15,6 +15,8 @@ payments_postgres_user="${PAYMENTS_POSTGRES_USER:-$shared_postgres_user}"
 payments_postgres_password="${PAYMENTS_POSTGRES_PASSWORD:-$shared_postgres_password}"
 customers_postgres_user="${CUSTOMERS_POSTGRES_USER:-$shared_postgres_user}"
 customers_postgres_password="${CUSTOMERS_POSTGRES_PASSWORD:-$shared_postgres_password}"
+products_postgres_user="${PRODUCTS_POSTGRES_USER:-$shared_postgres_user}"
+products_postgres_password="${PRODUCTS_POSTGRES_PASSWORD:-$shared_postgres_password}"
 
 vault secrets enable -path=secret kv-v2 >/dev/null 2>&1 || true
 vault secrets enable database >/dev/null 2>&1 || true
@@ -114,6 +116,12 @@ configure_database \
   customers-migration customers_migrator \
   "$customers_postgres_user" "$customers_postgres_password"
 
+configure_database \
+  products products-db products \
+  products-app products_runtime \
+  products-migration products_migrator \
+  "$products_postgres_user" "$products_postgres_password"
+
 write_token_file() {
   token_dir="$1"
   token="$2"
@@ -194,10 +202,12 @@ write_service_policy_and_token inventory platform/inventory inventory-app
 write_service_policy_and_token payments platform/payments payments-app
 write_service_policy_and_token notifications platform/notifications
 write_service_policy_and_token customers platform/customers customers-app
+write_service_policy_and_token products platform/products products-app
 
 write_migration_policy_and_token orders orders-migration
 write_migration_policy_and_token inventory inventory-migration
 write_migration_policy_and_token payments payments-migration
 write_migration_policy_and_token customers customers-migration
+write_migration_policy_and_token products products-migration
 
 echo "Vault KV secrets, runtime roles, migration roles and scoped tokens are ready."

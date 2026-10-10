@@ -36,6 +36,7 @@ flowchart TB
     subgraph Business["Bounded contexts"]
         Orders[Orders API]
         Customers[Customers API<br/>CRUD PF e PJ]
+        Products[Products API<br/>catálogo e CRUD]
         Inventory[Inventory Service]
         Payments[Payments Service]
         Notifications[Notifications Service]
@@ -48,6 +49,7 @@ flowchart TB
     subgraph Persistence["Database per service"]
         OrdersDb[(Orders PostgreSQL)]
         CustomersDb[(Customers PostgreSQL)]
+        ProductsDb[(Products PostgreSQL)]
         InventoryDb[(Inventory PostgreSQL)]
         PaymentsDb[(Payments PostgreSQL)]
     end
@@ -69,9 +71,11 @@ flowchart TB
     Client -->|"Bearer JWT"| Gateway
     Gateway -->|"JWT validado"| Orders
     Gateway -->|"JWT admin / CRUD PF-PJ"| Customers
+    Gateway -->|"JWT customer/admin: leitura; admin: escrita"| Products
 
     Orders --> OrdersDb
     Customers -->|"CPF/CNPJ e endereços"| CustomersDb
+    Products --> ProductsDb
     Customers -->|"somente CEP"| BrasilAPI[BrasilAPI CEP v2]
     Orders -->|"OrderSubmitted"| Rabbit
     Rabbit --> Inventory
@@ -85,6 +89,7 @@ flowchart TB
 
     Vault -. "runtime credentials" .-> Orders
     Vault -. "runtime credentials" .-> Customers
+    Vault -. "runtime credentials" .-> Products
     Vault -. "runtime credentials" .-> Inventory
     Vault -. "runtime credentials" .-> Payments
     Vault -. "RabbitMQ secret" .-> Notifications
@@ -92,12 +97,14 @@ flowchart TB
 
     Migrator -. "DDL / migrations" .-> OrdersDb
     Migrator -. "DDL / migrations" .-> CustomersDb
+    Migrator -. "DDL / migrations" .-> ProductsDb
     Migrator -. "DDL / migrations" .-> InventoryDb
     Migrator -. "DDL / migrations" .-> PaymentsDb
 
     Gateway -. "OTLP" .-> Collector
     Orders -. "OTLP" .-> Collector
     Customers -. "OTLP" .-> Collector
+    Products -. "OTLP" .-> Collector
     Inventory -. "OTLP" .-> Collector
     Payments -. "OTLP" .-> Collector
     Notifications -. "OTLP" .-> Collector
@@ -162,6 +169,10 @@ Ele expõe comandos/consultas HTTP síncronos, mas colabora com outros bounded c
 Customers é o bounded context administrativo para cadastro de pessoas físicas e jurídicas. Ele possui PostgreSQL próprio, valida CPF/CNPJ localmente, mantém contatos e até dez endereços por pessoa, com exatamente um endereço principal.
 
 As operações de cadastro exigem role `admin`. A consulta de CEP usa BrasilAPI v2 por uma porta de aplicação (`IPostalCodeLookup`), mantendo o domínio independente do provedor. CPF/CNPJ nunca são enviados à BrasilAPI.
+
+### Products
+
+Products é o bounded context de catálogo com SKU e código de barras únicos, nome, descrição, categoria, marca, unidade, preço BRL e status. GET exige JWT com role `customer` ou `admin`; POST/PUT/DELETE exigem `admin`. O serviço possui PostgreSQL próprio e credenciais Vault dinâmicas separadas para runtime e migration. Não mantém saldo físico nem faz reserva de estoque — responsabilidades de Inventory. Veja [ADR-0014](adr/0014-products-catalog-crud.md).
 
 ### Inventory
 

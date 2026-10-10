@@ -89,6 +89,7 @@ flowchart TB
     end
     subgraph Services["Business services"]
         Orders["Orders API<br/>Clean Architecture"]
+        Products["Products API<br/>Product catalog"]
         Customers["Customers API<br/>Full PF / PJ CRUD<br/>Clean Architecture"]
         Inventory["Inventory Service"]
         Payments["Payments Service"]
@@ -99,6 +100,7 @@ flowchart TB
     end
     subgraph Persistence["Database per service"]
         ODB[(Orders PostgreSQL)]
+        PRDB[(Products PostgreSQL)]
         CDB[(Customers PostgreSQL)]
         IDB[(Inventory PostgreSQL)]
         PDB[(Payments PostgreSQL)]
@@ -119,9 +121,11 @@ flowchart TB
     Client -->|"Bearer JWT"| Gateway
     Gateway -->|"validated JWT"| Orders
     Gateway -->|"admin JWT: PF/PJ CRUD and CEP"| Customers
+    Gateway -->|"customer/admin read; admin write"| Products
 
     Orders --> ODB
     Customers -->|"CPF/CNPJ, contacts, addresses"| CDB
+    Products --> PRDB
     Customers -->|"postal code only"| BrasilAPI["BrasilAPI CEP v2"]
     Orders -->|"OrderSubmitted"| Rabbit
     Rabbit --> Inventory
@@ -135,18 +139,21 @@ flowchart TB
 
     Vault -. "runtime credentials" .-> Orders
     Vault -. "runtime credentials" .-> Customers
+    Vault -. "runtime credentials" .-> Products
     Vault -. "runtime credentials" .-> Inventory
     Vault -. "runtime credentials" .-> Payments
     Vault -. "RabbitMQ secret" .-> Notifications
     Vault -. "migration credential" .-> Migrator
     Migrator -. "EF Core migrations" .-> ODB
     Migrator -. "EF Core migrations" .-> CDB
+    Migrator -. "EF Core migrations" .-> PRDB
     Migrator -. "EF Core migrations" .-> IDB
     Migrator -. "EF Core migrations" .-> PDB
 
     Gateway -. "OTLP" .-> OTel
     Orders -. "OTLP" .-> OTel
     Customers -. "OTLP" .-> OTel
+    Products -. "OTLP" .-> OTel
     Inventory -. "OTLP" .-> OTel
     Payments -. "OTLP" .-> OTel
     Notifications -. "OTLP" .-> OTel
@@ -165,6 +172,7 @@ More detail: [Architecture documentation](docs/architecture.en.md) · [platform 
 | --- | --- | --- | --- |
 | Keycloak | identity, OIDC/OAuth 2.0 authentication and realm roles | IdP internal state | issues JWTs to clients |
 | YARP API Gateway | HTTP ingress, JWT validation, rate limiting and reverse proxy | stateless | forwards authenticated requests |
+| Products API | product catalog, SKU, prices and status | PostgreSQL | JWT/RBAC + dedicated Vault migrations |
 | Customers API | administrative individual/company registry, contacts and addresses | PostgreSQL | JWT/RBAC + BrasilAPI CEP v2 |
 | Orders API | order lifecycle, resource authorization and customer-facing API | PostgreSQL | publishes + consumes events |
 | Inventory Service | idempotent stock reservation decision | PostgreSQL | consumes + publishes events |
@@ -392,6 +400,22 @@ Postal-code `GET` uses **BrasilAPI CEP v2** through the `IPostalCodeLookup` appl
 - **Automated checks:** with local infrastructure running, execute `bash scripts/customers-smoke.sh` (requires `curl` and `jq`, uses the local fixture user `demo-admin`). This tests PF/PJ CRUD through the Gateway, authorization, address replacement, pagination, duplicate documents, and deletion. Domain, infrastructure, and persistence regression tests are also available.
 
 **Current boundaries:** this is an **administrative API**, not a ready-made user-facing web UI; creating a customer does not automatically provision a Keycloak identity or attach the registration to an Orders order. See [ADR-0013](docs/adr/0013-customers-pf-pj-brasilapi-cep.en.md), [architecture](docs/architecture.en.md), and [security posture](docs/security-posture.en.md) for the design and security decisions.
+
+---
+
+## Product catalog and CRUD
+
+**Product catalog (Products):** the new service creates, reads, updates and deletes products with unique SKU/barcode, description, category, brand, unit, BRL price and active/inactive status. Authenticated `customer`/`admin` roles may read; only `admin` may write. Products owns a PostgreSQL database with dedicated migrations and separate Vault identities. Stock and reservations remain Inventory's responsibility.
+
+| Method | Route | Action |
+| --- | --- | --- |
+| `POST` | `/api/products` | Create a product (admin) |
+| `GET` | `/api/products` | Paginated search with `search`, `category`, `isActive`, `page`, `pageSize` |
+| `GET` | `/api/products/{id}` | Read by GUID |
+| `PUT` | `/api/products/{id}` | Replace all fields and active status (admin) |
+| `DELETE` | `/api/products/{id}` | Physically delete a product (admin) |
+
+See [ADR-0014](docs/adr/0014-products-catalog-crud.en.md) and `bash scripts/products-smoke.sh` (local stack and `jq` required).
 
 ---
 

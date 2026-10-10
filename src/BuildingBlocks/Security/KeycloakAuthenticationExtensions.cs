@@ -12,6 +12,8 @@ public static class SecurityPolicies
     public const string OrdersWrite = "orders.write";
     public const string CustomersRead = "customers.read";
     public const string CustomersWrite = "customers.write";
+    public const string ProductsRead = "products.read";
+    public const string ProductsWrite = "products.write";
     public const string PlatformAdmin = "platform.admin";
 }
 
@@ -68,6 +70,12 @@ public static class KeycloakAuthenticationExtensions
                 policy => policy.RequireAuthenticatedUser().RequireRole("admin"))
             .AddPolicy(
                 SecurityPolicies.CustomersWrite,
+                policy => policy.RequireAuthenticatedUser().RequireRole("admin"))
+            .AddPolicy(
+                SecurityPolicies.ProductsRead,
+                policy => policy.RequireAuthenticatedUser().RequireRole("customer", "admin"))
+            .AddPolicy(
+                SecurityPolicies.ProductsWrite,
                 policy => policy.RequireAuthenticatedUser().RequireRole("admin"))
             .AddPolicy(
                 SecurityPolicies.PlatformAdmin,

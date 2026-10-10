@@ -96,6 +96,7 @@ flowchart TB
 
     subgraph Services["Serviços de negócio"]
         Orders[Orders API<br/>Clean Architecture]
+        Products[Products API<br/>Catálogo de produtos]
         Customers[Customers API<br/>CRUD PF / PJ<br/>Clean Architecture]
         Inventory[Inventory Service]
         Payments[Payments Service]
@@ -108,6 +109,7 @@ flowchart TB
 
     subgraph Data["Database per service"]
         ODB[(Orders PostgreSQL)]
+        PRDB[(Products PostgreSQL)]
         CDB[(Customers PostgreSQL)]
         IDB[(Inventory PostgreSQL)]
         PDB[(Payments PostgreSQL)]
@@ -130,9 +132,11 @@ flowchart TB
     Client -->|"Bearer JWT"| Gateway
     Gateway -->|"JWT validado"| Orders
     Gateway -->|"JWT admin: CRUD PF/PJ e CEP"| Customers
+    Gateway -->|"JWT customer/admin: leitura; admin: escrita"| Products
 
     Orders --> ODB
     Customers -->|"PF/PJ, contatos e endereços"| CDB
+    Products --> PRDB
     Customers -->|"somente CEP"| BrasilAPI[BrasilAPI CEP v2]
     Orders -->|"OrderSubmitted"| Rabbit
 
@@ -149,6 +153,7 @@ flowchart TB
 
     Vault -. "runtime credentials" .-> Orders
     Vault -. "runtime credentials" .-> Customers
+    Vault -. "runtime credentials" .-> Products
     Vault -. "runtime credentials" .-> Inventory
     Vault -. "runtime credentials" .-> Payments
     Vault -. "RabbitMQ secret" .-> Notifications
@@ -156,12 +161,14 @@ flowchart TB
 
     Migrator -. "DDL / EF migrations" .-> ODB
     Migrator -. "DDL / EF migrations" .-> CDB
+    Migrator -. "DDL / EF migrations" .-> PRDB
     Migrator -. "DDL / EF migrations" .-> IDB
     Migrator -. "DDL / EF migrations" .-> PDB
 
     Gateway -. "OTLP" .-> OTel
     Orders -. "OTLP" .-> OTel
     Customers -. "OTLP" .-> OTel
+    Products -. "OTLP" .-> OTel
     Inventory -. "OTLP" .-> OTel
     Payments -. "OTLP" .-> OTel
     Notifications -. "OTLP" .-> OTel
@@ -211,6 +218,7 @@ Mais detalhes: [documentação de arquitetura](docs/architecture.md) · [walkthr
 | YARP API Gateway | entrada HTTP, validação JWT, rate limiting e proxy reverso | stateless | encaminha apenas requisições autenticadas |
 | Orders API | ciclo de vida do pedido, autorização por recurso e API voltada ao cliente | PostgreSQL | publica + consome eventos |
 | Customers API | cadastro administrativo de pessoa física/jurídica, contatos e endereços | PostgreSQL | JWT/RBAC + BrasilAPI CEP v2 |
+| Products API | catálogo de produtos, SKU, preço e status | PostgreSQL | JWT/RBAC + migrations/Vault próprios |
 | Inventory Service | decisão idempotente de reserva de estoque | PostgreSQL | consome + publica eventos |
 | Payments Service | decisão de autorização de pagamento | PostgreSQL | consome + publica eventos |
 | Notifications Service | reação independente de comunicação com cliente | demo stateless | consome eventos |
@@ -438,6 +446,22 @@ O `GET` por CEP consulta **BrasilAPI CEP v2** por uma porta de aplicação (`IPo
 - **Validação automatizada:** com os recursos locais ativos, execute `bash scripts/customers-smoke.sh` (usa `curl` e `jq`, usuário fictício `demo-admin` da configuração local). O script cobre CRUD PF/PJ via Gateway, autorização, atualização de endereço, paginação, duplicidade e exclusão; existem também testes de domínio, infraestrutura e regressão de persistência.
 
 **Limites atuais:** o cadastro é uma **API administrativa**, não uma interface gráfica pronta; a criação de um cliente não provisiona automaticamente um usuário no Keycloak nem vincula o cadastro a um pedido em Orders. Para decisões arquiteturais e segurança, consulte [ADR-0013](docs/adr/0013-customers-pf-pj-brasilapi-cep.md), [arquitetura](docs/architecture.md) e [postura de segurança](docs/security-posture.md).
+
+---
+
+## Cadastro de produtos e catálogo
+
+**Catálogo de produtos (Products):** o novo serviço oferece cadastro, consulta, atualização e exclusão de produtos com SKU e código de barras únicos, descrição, categoria, marca, unidade, preço em BRL e status ativo/inativo. Leitura autenticada por `customer`/`admin`; escrita somente por `admin`. Produtos têm PostgreSQL e migrations dedicados com identidades Vault distintas. Estoque e reservas continuam sob responsabilidade de Inventory.
+
+| Método | Rota | Ação |
+| --- | --- | --- |
+| `POST` | `/api/products` | Cadastro de produto (admin) |
+| `GET` | `/api/products` | Lista paginada com `search`, `category`, `isActive`, `page`, `pageSize` |
+| `GET` | `/api/products/{id}` | Detalhes por GUID |
+| `PUT` | `/api/products/{id}` | Atualiza todos os campos e o status (admin) |
+| `DELETE` | `/api/products/{id}` | Exclui o registro (admin) |
+
+Para exemplos e limites de catálogo, consulte [ADR-0014](docs/adr/0014-products-catalog-crud.md) e o script `bash scripts/products-smoke.sh` (exige plataforma local e `jq`).
 
 ---
 
