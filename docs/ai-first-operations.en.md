@@ -26,7 +26,7 @@ flowchart LR
 | `validate` | `contents: read`; imports the patch in an isolated runner, saves a trusted guard **before** patch application, runs Python fixtures, .NET restore/Release build/tests/format, static security checks and Compose validation |
 | `publish` | `contents: write`, `pull-requests: write`, `actions: write`; rechecks the same patch SHA-256 and guard, opens one branch/PR and dispatches CI/Security/DAST; **never merges** |
 
-Third-party GitHub Actions are pinned to commit SHAs. Execution is manual, serialized per repository, and limited to small tasks. The patch artifact is retained for three days; the workflow has no production deployment step.
+Third-party GitHub Actions are pinned to commit SHAs. The original harness accepts manual dispatch, and the reviewed GitHub request bridge described below can request the same workflow; execution remains serialized per repository and limited to small tasks. The patch artifact is retained for three days; the workflow has no production deployment step.
 
 ## GitHub prerequisites
 
@@ -56,7 +56,7 @@ The GitHub REST endpoint is `POST /repos/{owner}/{repo}/actions/workflows/ai-evo
 1. Open [Actions → AI Evolution Harness](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/workflows/ai-evolution.yml), choose **Run workflow**, select `main`, and enter:
 
    ```text
-   Create only docs/ai-first-smoke-test.md and docs/ai-first-smoke-test.en.md,
+   Create only docs/ai-first-github-bridge-smoke.md and docs/ai-first-github-bridge-smoke.en.md,
    explaining in Portuguese and English that this is a harmless AI-First
    workflow test. Do not modify other files, include private data, or merge.
    ```
