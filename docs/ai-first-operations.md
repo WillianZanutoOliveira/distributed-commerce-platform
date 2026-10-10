@@ -34,6 +34,23 @@ Actions de terceiros são referenciadas por SHA fixo. A execução é manual, se
 2. Em **Settings → Actions → General**, confira permissões do `GITHUB_TOKEN` e se GitHub Actions pode criar pull requests. O job `publish` requer escrita em conteúdo/PRs e permissão para disparar workflows; evite aumentar os privilégios globais do repositório.
 3. Confirme que a branch escolhida é `main` e que os checks de CI e Security da versão atual foram concluídos. A conexão usada para documentar este processo **não expõe o estado dos secrets nem permite garantir que as permissões estejam configuradas**.
 
+## Disparo pelo conector GitHub do ChatGPT (ponte com revisão humana)
+
+A integração GitHub disponível neste chat pode criar **branches e arquivos**, mas atualmente **não disponibiliza** uma ação direta para `workflow_dispatch`. A proposta de governança [`.github/workflows/ai-evolution-request.yml`](../.github/workflows/ai-evolution-request.yml) cria uma ponte usando `push` em uma branch de solicitação. **Ela só entra em funcionamento após revisão e merge humano da mudança de governança na `main`.**
+
+### Como solicitar uma execução pelo chat
+
+1. Peça ao ChatGPT: **"Inicie o AI-First para [tarefa pequena e específica]"**. Com o conector GitHub já conectado, o assistente deverá criar uma **nova branch** no formato `ai-requests/<identificador-unico>` partindo da `main`.
+2. Na branch, o assistente deverá **adicionar somente** o arquivo `.ai-requests/task.md`, contendo a instrução, em **um único commit de adição**. Não criar ou modificar workflows, segredos, código nem outros arquivos nessa solicitação; não reutilizar uma branch anterior.
+3. O workflow intermediário, se estiver ativo, verifica que o pai do commit pertence ao histórico da `main`, que o commit **apenas adicionou** o arquivo permitido e que a tarefa é UTF-8, não vazia e limitada a **4 KiB**. Ele usa o `GITHUB_TOKEN` **somente** com `contents:read` e `actions:write`, para chamar a API de `workflow_dispatch` do `ai-evolution.yml` em `main`.
+4. Confirme o disparo em [GitHub Actions — AI Evolution Harness](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/workflows/ai-evolution.yml) e acompanhe `engineer → validate → publish`. A ponte **não cria nem aprova PR de código, não executa tarefas diretamente e não faz merge**; ela só solicita o início do harness existente.
+
+A branch de solicitação é **apenas um envelope de instrução**, não um PR a ser mesclado; pode ser excluída pelo mantenedor após confirmação do disparo. O workflow mantém rastreabilidade do ator do `push`, ID de execução e SHA. Um `push` realizado pelo **`GITHUB_TOKEN` de outro workflow** normalmente não dispara workflows novos; a ponte destina-se a um `push` externo autenticado pela conexão GitHub App. Um teste real é obrigatório para validar esse comportamento e as permissões na instalação utilizada.
+
+**Limites de segurança:** o conector não ganhou uma nova função nativa e não recebeu permissão irrestrita de Actions. O repositório continua responsável por autenticar quem pode fazer `push` em branches de solicitação; quem tiver essa permissão poderá pedir execuções, com custo de CI/Codex. Mantenha colaboradores com escrita sob controle, configure orçamentos e limites da API, e considere regras adicionais de aprovação quando necessário. O job intermediário não recebe `OPENAI_API_KEY`; somente o `engineer` do harness usa o segredo já configurado. Se `actions:write` for bloqueado nas configurações de Actions, a ponte falhará de forma visível e deverá ser ajustada por um mantenedor, **não contornada**.
+
+O endpoint oficial do GitHub utilizado é `POST /repos/{owner}/{repo}/actions/workflows/ai-evolution.yml/dispatches` com `ref=main` e `inputs.task`. A alternativa manual `Run workflow` documentada abaixo continua disponível.
+
 ## Primeira execução controlada
 
 1. Abra [Actions → AI Evolution Harness](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/workflows/ai-evolution.yml), selecione **Run workflow**, escolha `main` e informe a tarefa:

@@ -1,0 +1,97 @@
+# GOVERNANCE CHANGE: maintainer approval required before enabling this bridge.
+# ChatGPT GitHub connector can create request branches and files but does not expose
+# workflow_dispatch; a restricted push on ai-requests/** bridges into the existing
+# AI Evolution Harness workflow on main without allowing bypass or auto-merge.
+name: AI-First GitHub Request Bridge
+
+on:
+  push:
+    branches:
+      - 'ai-requests/**'
+    paths:
+      - '.ai-requests/task.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-first-request-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Validate request and dispatch main harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Checkout exact request revision without persisted token
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require single new task file branched directly from trusted main
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # One new request commit on top of a main ancestor; no arbitrary branch
+          # code, workflow changes, or additional files are accepted.
+          git merge-base --is-ancestor "${GITHUB_SHA}^" origin/main || {
+            echo "AI request must branch from main; unexpected history." >&2
+            exit 1
+          }
+
+          changed="$(git diff --name-status --no-renames "${GITHUB_SHA}^" "$GITHUB_SHA")"
+          if [[ "$changed" != $'A\t.ai-requests/task.md' ]]; then
+            echo "AI request must add exactly .ai-requests/task.md in a single commit." >&2
+            exit 1
+          fi
+
+          if [[ ! -f .ai-requests/task.md || -L .ai-requests/task.md ]]; then
+            echo "A regular .ai-requests/task.md file is required." >&2
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          raw = Path(".ai-requests/task.md").read_bytes()
+          if len(raw) < 10 or len(raw) > 4096 or b"\x00" in raw:
+              raise SystemExit("Task must contain 10 to 4096 UTF-8 bytes without NUL.")
+          try:
+              task = raw.decode("utf-8")
+          except UnicodeDecodeError as exc:
+              raise SystemExit("Task must be valid UTF-8.") from exc
+          if not task.strip():
+              raise SystemExit("Task cannot be blank.")
+          PY
+
+      - name: Dispatch AI Evolution Harness from main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # Never interpolate the untrusted task as shell source or echo it to logs.
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          task = Path(".ai-requests/task.md").read_text(encoding="utf-8")
+          payload = {"ref": "main", "inputs": {"task": task}}
+          path = Path(os.environ["RUNNER_TEMP"]) / "ai-first-dispatch.json"
+          path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+          PY
+
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ai-evolution.yml/dispatches" \
+            --input "$RUNNER_TEMP/ai-first-dispatch.json"
+
+          echo "AI Evolution Harness dispatched on main. Inspect its engineer, validate and publish jobs."
