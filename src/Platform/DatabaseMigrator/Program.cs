@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Orders.Infrastructure;
 using Payments.Service;
+using Products.Infrastructure;
 
 var target = Environment.GetEnvironmentVariable("MIGRATION_TARGET");
 
@@ -27,6 +28,10 @@ static async Task MigrateAsync(
             await MigrateCustomersAsync(RequireConnectionString(configuration, "customers-db"));
             break;
 
+        case "products":
+            await MigrateProductsAsync(RequireConnectionString(configuration, "products-db"));
+            break;
+
         case "orders":
             await MigrateOrdersAsync(RequireConnectionString(configuration, "orders-db"));
             break;
@@ -41,7 +46,7 @@ static async Task MigrateAsync(
 
         default:
             throw new InvalidOperationException(
-                $"Unsupported MIGRATION_TARGET '{target}'. Expected customers, orders, inventory or payments.");
+                $"Unsupported MIGRATION_TARGET '{target}'. Expected customers, products, orders, inventory or payments.");
     }
 
     Console.WriteLine("Database migrations completed for {0}.", target);
@@ -53,6 +58,16 @@ static string RequireConnectionString(
     configuration.GetConnectionString(name)
     ?? throw new InvalidOperationException(
         $"Connection string '{name}' was not provided by the migration secret boundary.");
+
+static async Task MigrateProductsAsync(string connectionString)
+{
+    var options = new DbContextOptionsBuilder<ProductsDbContext>()
+        .UseNpgsql(connectionString)
+        .Options;
+
+    await using var context = new ProductsDbContext(options);
+    await context.Database.MigrateAsync();
+}
 
 static async Task MigrateCustomersAsync(string connectionString)
 {
