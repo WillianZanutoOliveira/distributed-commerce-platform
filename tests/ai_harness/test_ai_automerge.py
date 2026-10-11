@@ -75,6 +75,22 @@ class AutomaticReviewPolicyTests(unittest.TestCase):
                                             head_sha="abc",
                                             minimum_created_at="2026-10-12T00:00:00Z"))
 
+    def test_owner_codeowners_request_is_informational_for_docs_only(self):
+        module.verify_review_requests(
+            [{"login": "WillianZanutoOliveira"}], [], "WillianZanutoOliveira"
+        )
+        module.verify_review_requests([], [], "WillianZanutoOliveira")
+
+    def test_non_owner_or_team_review_requests_still_block(self):
+        with self.assertRaises(module.PolicyFailure):
+            module.verify_review_requests(
+                [{"login": "ExternalReviewer"}], [], "WillianZanutoOliveira"
+            )
+        with self.assertRaises(module.PolicyFailure):
+            module.verify_review_requests(
+                [], [{"slug": "security"}], "WillianZanutoOliveira"
+            )
+
     def test_only_latest_matching_dispatch_counts(self):
         run = {"event": "workflow_dispatch", "head_sha": "abc", "head_branch": "branch",
                "created_at": "2026-10-11T17:00:00Z", "id": 2}

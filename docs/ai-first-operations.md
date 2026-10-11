@@ -2,6 +2,8 @@
 
 # Operação segura dos agentes AI-First
 
+A solicitação automática de review de CODEOWNERS ao proprietário não impede o merge de documentação elegível; pedidos de terceiros, equipes e reviews reprovados continuam bloqueando. Regras obrigatórias de proteção do GitHub são respeitadas.
+
 ## Revisão automática condicionada (nova política)
 
 O mantenedor solicitou eliminar a revisão manual do AI-First. O ADR-0016 propõe um mecanismo **restrito a documentação nova de baixo risco**: depois de engineer, validate e publish, um job de revisão independente confere autoria, SHA/base imutáveis, diff em caminhos autorizados e resultados positivos de CI, Security e DAST na mesma branch e commit. Só após todos os gates o GitHub pode realizar merge automático. Se qualquer condição falhar, o PR continua aberto ou o job encerra com falha.

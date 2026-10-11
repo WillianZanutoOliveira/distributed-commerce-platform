@@ -9,7 +9,7 @@ Governance proposal. CI, Security, permission review and an end-to-end smoke run
 AI Evolution Harness already demonstrated owner issue → sandboxed Codex → immutable SHA-256 patch → independent validator → Actions-created PR → CI/Security/DAST. PR #38 passed these checks and was merged on October 11, 2026. The owner requested automated review and integration without human PR approval.
 
 ## Decision
-Introduce a **separate, trusted, deterministic policy-review job** after publish. Its code comes from the original immutable main revision, not the proposed PR. Verify GitHub Actions bot authorship, exact ai/evolution-<run>-<attempt> branch, matching immutable base and head SHA, single commit, no requested or blocking reviews, changed path and normal file mode. Fail closed if main advances, the PR changes or any identity cannot be verified.
+Introduce a **separate, trusted, deterministic policy-review job** after publish. Its code comes from the original immutable main revision, not the proposed PR. Verify GitHub Actions bot authorship, exact ai/evolution-<run>-<attempt> branch, matching immutable base and head SHA, single commit, no non-owner/team review requests or blocking reviews (the default owner CODEOWNERS request is informational only for eligible docs), changed path and normal file mode. Fail closed if main advances, the PR changes or any identity cannot be verified.
 
 **First narrowly scoped authorization:** 1–4 **new Markdown files** under low-risk docs/ paths, no more than 250 added lines, no deletions, executable files, symlinks, code, workflows, ADRs, governance, security or production configuration. All other PRs remain open for separate approval. Production, GitOps and migration changes never qualify under this policy.
 
