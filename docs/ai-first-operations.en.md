@@ -2,6 +2,8 @@
 
 # Secure AI-First agent operations
 
+An automatically requested CODEOWNERS review from the repository owner does not block eligible documentation merges; other reviewers, teams and blocking reviews remain disqualifying. GitHub's enforced branch rules still apply.
+
 ## Conditional automated review (new policy)
 
 The owner requested removing the manual AI-First PR review step. ADR-0016 proposes a **new-docs-only, low-risk** independent policy-review job after engineer, validate and publish. It verifies Actions bot authorship, immutable base/head SHA, narrowly allowed changed paths and green, independently dispatched CI, Security and DAST runs for the exact same commit. Only then may GitHub merge without human action; any mismatch fails closed or leaves the PR open.

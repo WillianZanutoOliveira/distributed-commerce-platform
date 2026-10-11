@@ -74,6 +74,18 @@ def evaluate_files(files: list[dict], tree: dict) -> None:
         raise PolicyFailure("Documentation change exceeds the auto-merge size budget.")
 
 
+def verify_review_requests(reviewers: list[dict], teams: list[dict], owner: str) -> None:
+    """A CODEOWNERS owner request is informational for docs-only PRs.
+
+    This does NOT bypass GitHub enforced required reviews, which the merge API
+    still enforces; all non-owner requests or team requests remain blocking.
+    """
+    if teams:
+        raise PolicyFailure("A team has explicitly requested manual review.")
+    if any(x.get("login", "").casefold() != owner.casefold() for x in reviewers):
+        raise PolicyFailure("A non-owner reviewer requested manual review.")
+
+
 def choose_run(runs: list[dict], *, branch: str, head_sha: str,
                minimum_created_at: str) -> dict | None:
     matched = [
@@ -119,8 +131,11 @@ def policy_check(repo: str, number: int, head_sha: str, branch: str,
         raise PolicyFailure("Forked PR is never auto-merged.")
     if pr.get("commits") != 1 or not branch.startswith(f"ai/evolution-{harness_run_id}-"):
         raise PolicyFailure("PR must contain exactly one commit from this harness run.")
-    if pr.get("requested_reviewers") or pr.get("requested_teams"):
-        raise PolicyFailure("A human review has been explicitly requested.")
+    verify_review_requests(
+        pr.get("requested_reviewers") or [],
+        pr.get("requested_teams") or [],
+        repo.split("/")[0],
+    )
     if {x.get("name", "").lower() for x in pr.get("labels", [])} & BLOCKING_LABELS:
         raise PolicyFailure("A safety or manual-review hold is present.")
 
