@@ -70,6 +70,15 @@ jobs:
           printf '%s\n' "$OPENAI_API_KEY" | codex login --with-api-key
           codex login status
 
+      - name: Verify safe Landlock sandbox compatibility on runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Ubuntu runner's Bubblewrap backend may fail to configure loopback.
+          # Landlock remains a filesystem sandbox, not unrestricted access.
+          # Refuse to start the agent if sandboxed shell cannot read workspace.
+          codex --enable use_legacy_landlock sandbox linux -- /bin/sh -c 'test -r AGENTS.md && test -d docs && pwd >/dev/null'
+
       - name: Run sandboxed implementation agent without repository write token
         env:
           CODEX_HOME: ${{ runner.temp }}/codex-home
@@ -79,7 +88,7 @@ jobs:
           # Non-interactive CLI approval mode is a global option. The sandbox
           # remains limited to writable workspace paths and the agent has no
           # persisted repository credentials or GitHub write token.
-          codex --ask-for-approval never exec --sandbox workspace-write "$PROMPT
+          codex --enable use_legacy_landlock --ask-for-approval never exec --sandbox workspace-write "$PROMPT
 
           Requested task:
           $AI_TASK"

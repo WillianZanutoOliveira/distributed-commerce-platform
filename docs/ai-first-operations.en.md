@@ -2,6 +2,12 @@
 
 # Secure AI-First agent operations
 
+### Linux sandbox smoke — October 11, 2026
+
+After API quota was restored, the maintainer reran [AI Evolution Harness run #38134885086](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/runs/38134885086). Codex authenticated and received the task but produced no file changes because sandboxed commands failed on the Ubuntu runner with `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`. The `engineer` job failed in `Export a patch` (empty patch) and the dependent `validate` and `publish` jobs were skipped.
+
+This governance fix explicitly enables Codex's alternative **Landlock** Linux sandbox backend (`--enable use_legacy_landlock`) and runs a sandboxed shell *preflight* before starting model inference. It **does not** replace `workspace-write` with `danger-full-access`, expand GitHub privileges, or auto-merge. The alternative backend must pass a real runner smoke test before declaring the full cycle operational.
+
 ### Additional authentication finding — October 11, 2026
 
 After merging [PR #26](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/pull/26), [issue #27](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/issues/27) started [harness run #38134291188](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/runs/38134291188). The CLI accepted the options and started in the `workspace-write` sandbox, but received **HTTP 401 / `Missing bearer or basic authentication in header`**. No patch was generated; `validate` and `publish` were skipped. The observed cause is that setting `OPENAI_API_KEY` as an environment variable did not log in the pinned Codex CLI. This governance change uses `codex login --with-api-key` with the secret supplied via **stdin** in a temporary auth directory, without printing the value to logs or committing it; only the `engineer` job receives the secret. Temporary authentication is deleted at the end of the job. A new end-to-end smoke run remains required after human-reviewed governance merge.

@@ -2,6 +2,12 @@
 
 # Operação segura dos agentes AI-First
 
+### Teste de sandbox Linux — 11/10/2026
+
+Após o ajuste de cota da API, o mantenedor autorizou a nova execução da [run #38134885086](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/runs/38134885086). O Codex autenticou, recebeu a tarefa e retornou sem alteração de arquivos porque comandos sandboxed falharam com `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted` no runner Ubuntu. O job `engineer` falhou em `Export a patch` (patch vazio), e os jobs `validate` e `publish` foram ignorados.
+
+A correção proposta habilita explicitamente a implementação **Landlock** do sandbox Linux do Codex (`--enable use_legacy_landlock`) e adiciona um *preflight* de execução de shell **dentro do sandbox** antes de iniciar a inferência. **Não** muda o modo `workspace-write` para `danger-full-access`, não amplia permissões de GitHub e não permite merge automático. A compatibilidade do backend alternativo precisa ser comprovada com teste real no runner antes de declarar o ciclo completo.
+
 ### Registro adicional de autenticação — 11/10/2026
 
 Após o merge do [PR #26](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/pull/26), a [issue #27](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/issues/27) iniciou o [harness #38134291188](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/runs/38134291188). A CLI aceitou os argumentos e iniciou a sessão em `workspace-write`, mas recebeu **HTTP 401 / `Missing bearer or basic authentication in header`**. Não houve patch gerado: `validate` e `publish` foram ignorados. A causa observada é que definir `OPENAI_API_KEY` apenas como variável de ambiente não estabeleceu login no Codex CLI fixado. Esta correção usa `codex login --with-api-key` com o segredo via **stdin** em diretório temporário, sem publicar o valor em logs ou na árvore Git; somente o job `engineer` recebe o segredo. O diretório de autenticação é excluído no final do job. Ainda é necessário um smoke end-to-end após a revisão e o merge desta mudança de governança.
