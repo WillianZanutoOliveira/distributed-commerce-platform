@@ -2,6 +2,14 @@
 
 # Operação segura dos agentes AI-First
 
+## Revisão automática condicionada (nova política)
+
+O mantenedor solicitou eliminar a revisão manual do AI-First. O ADR-0016 propõe um mecanismo **restrito a documentação nova de baixo risco**: depois de engineer, validate e publish, um job de revisão independente confere autoria, SHA/base imutáveis, diff em caminhos autorizados e resultados positivos de CI, Security e DAST na mesma branch e commit. Só após todos os gates o GitHub pode realizar merge automático. Se qualquer condição falhar, o PR continua aberto ou o job encerra com falha.
+
+**Limites iniciais:** apenas 1–4 arquivos .md novos de docs/ (excluindo ADR, governança e segurança), até 250 linhas novas, sem deleções ou symlinks. Código, migrations, autenticação, workflows e implantação não terão merge automático. O merge de produção permanece bloqueado. Regras de proteção de branch com revisão obrigatória não são contornadas. Este é um modelo de revisão **determinística com testes automatizados**, não uma aprovação por outra IA.
+
+Ver [ADR-0016](adr/0016-ai-first-conditional-automerge.md) e o [script de revisão](../scripts/ai-first-automerge.py). A ativação exige merge governado deste PR e teste real para comprovar a nova permissão. O fluxo anterior, validado até o PR #38, comprovou publish e CI/Security/DAST, mas **não** um merge sem ação humana.
+
 ### Correção da sintaxe do preflight — 11/10/2026
 
 O [harness #38153935585](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/runs/38153935585), solicitado pela [issue #33](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/issues/33), passou pela instalação de `bubblewrap 0.9.0` e pelo carregamento do perfil AppArmor, mas falhou no preflight devido à sintaxe: `codex sandbox linux --` tentou executar um binário chamado `linux` e retornou `Failed to execvp linux`. A CLI `0.160.0` utiliza `codex sandbox -- COMANDO` neste modo. A correção substitui apenas a chamada de teste por `codex sandbox -- /bin/sh ...`. Não altera isolamento, permissões, segredo ou parâmetros de inferência. Precisa de um teste real em `main` após revisão.

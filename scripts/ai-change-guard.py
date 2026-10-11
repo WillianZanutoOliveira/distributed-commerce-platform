@@ -30,6 +30,8 @@ PROTECTED_FILES = frozenset(
         # A future agent must not be able to rewrite its own guard or CI checks.
         ".github/workflows/ci.yml",
         "scripts/ai-change-guard.py",
+        "scripts/ai-first-automerge.py",
+        "tests/ai_harness/test_ai_automerge.py",
         "tests/ai_harness/test_ai_change_guard.py",
     }
 )
