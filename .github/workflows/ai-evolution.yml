@@ -202,6 +202,10 @@ jobs:
 
   publish:
     needs: validate
+    outputs:
+      pr_number: ${{ steps.publish_pr.outputs.number }}
+      head_sha: ${{ steps.publish_pr.outputs.sha }}
+      branch: ${{ steps.publish_pr.outputs.branch }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -239,6 +243,7 @@ jobs:
           python3 "$RUNNER_TEMP/trusted-guard.py" --repo . --base-sha "$GITHUB_SHA"
 
       - name: Publish exactly one review-only branch and pull request
+        id: publish_pr
         env:
           GH_TOKEN: ${{ github.token }}
           AI_TASK: ${{ inputs.task }}
@@ -265,9 +270,52 @@ jobs:
             --title "AI-assisted evolution: $TITLE" \
             --body-file "$RUNNER_TEMP/ai-pr-body.md"
 
+          # Trusted reviewer consumes the exact PR/commit identity. Both were
+          # generated only after the independently validated immutable patch.
+          echo "number=$(gh pr view "$BRANCH" --json number --jq .number)" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
           # GITHUB_TOKEN-created PR events may require workflow approval.
           # Explicit workflow_dispatch on the generated branch runs all independent
           # checks. Failure to schedule any check fails this publisher job.
           for workflow in ci.yml security.yml dast.yml; do
             gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
           done
+
+  automated-review:
+    name: Policy review and conditional docs-only merge
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+    steps:
+      - name: Checkout trusted main review policy, never PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Test automated review fail-closed policy
+        run: python3 -m unittest discover -s tests/ai_harness -p 'test_ai_automerge.py' -v
+
+      - name: Independently review and merge eligible docs after all gates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.publish.outputs.pr_number }}
+          PR_HEAD: ${{ needs.publish.outputs.head_sha }}
+          PR_BRANCH: ${{ needs.publish.outputs.branch }}
+          TRUSTED_BASE: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ai-first-automerge.py \
+            --pr-number "$PR_NUMBER" \
+            --head-sha "$PR_HEAD" \
+            --branch "$PR_BRANCH" \
+            --trusted-base "$TRUSTED_BASE" \
+            --harness-run-id "$GITHUB_RUN_ID"

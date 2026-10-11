@@ -114,6 +114,8 @@ class AiChangeGuardTests(unittest.TestCase):
             ".github/workflows/security.yml",
             ".github/workflows/ci.yml",
             "scripts/ai-change-guard.py",
+            "scripts/ai-first-automerge.py",
+            "tests/ai_harness/test_ai_automerge.py",
             "tests/ai_harness/test_ai_change_guard.py",
         ):
             with self.subTest(path=protected_path):
