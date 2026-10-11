@@ -2,6 +2,12 @@
 
 # Secure AI-First agent operations
 
+### Ubuntu runner update — October 11, 2026
+
+[Issue #31](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/issues/31) correctly triggered [AI Evolution Harness #38153271880](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/runs/38153271880), but Codex's Landlock preflight failed with `filesystem-restricted execution requires bubblewrap to isolate app-server sockets`. The `engineer` job ended before running the agent, showing that the isolated Landlock alternative from PR #30 is not viable on this runner.
+
+The next governance fix **returns to the default Bubblewrap sandbox**, installs distribution packages `bubblewrap`, `apparmor-profiles`, and `apparmor-utils`, loads the Ubuntu-specific `bwrap-userns-restrict` AppArmor profile following official documentation, and runs a sandboxed read preflight before model inference. It **does not** change the host-wide `kernel.apparmor_restrict_unprivileged_userns` setting, disable the sandbox, grant full shell access, or expand `GITHUB_TOKEN` privileges. It fails closed if the profile is unavailable or the sandbox fails. A real post-merge `main` smoke run is required.
+
 ### Linux sandbox smoke — October 11, 2026
 
 After API quota was restored, the maintainer reran [AI Evolution Harness run #38134885086](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/runs/38134885086). Codex authenticated and received the task but produced no file changes because sandboxed commands failed on the Ubuntu runner with `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`. The `engineer` job failed in `Export a patch` (empty patch) and the dependent `validate` and `publish` jobs were skipped.
