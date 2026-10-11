@@ -1,25 +1,26 @@
 [🇧🇷 Português](0015-ai-first-request-bridge.md)
 
-# ADR-0015 — GitHub request bridge for AI-First
+# ADR-0015 — Secure AI-First dispatch via GitHub issues
 
 ## Status
-Governance proposal — requires human review and merge, passing CI/Security and a successful real end-to-end smoke test.
+Proposed governance change. Human review, manual merge, and an actual end-to-end smoke test are required.
 
-## Problem
-The existing `ai-evolution.yml` supports `workflow_dispatch`, but the GitHub connector available to ChatGPT exposes branch/file/PR operations rather than the native dispatch action. Changing GitHub App permissions does not create missing connector operations. GitHub credentials and `OPENAI_API_KEY` must never be pasted into the chat.
+## Context
+The `AI Evolution Harness` on `main` accepts `workflow_dispatch` and `inputs.task`, but the GitHub connection in ChatGPT does not offer that action. It already supports `create_issue`. Do not paste GitHub/OpenAI tokens into chats.
 
 ## Decision
-Create **one independent workflow** (`.github/workflows/ai-evolution-request.yml`) as a least-privilege governance bridge:
-1. Trigger on `push` to `ai-requests/**` only when the push touches `.ai-requests/task.md`.
-2. Require a **single direct-child commit** from a `main` ancestor which only adds `.ai-requests/task.md`; reject other changes, existing-file updates, symlinks, invalid encoding, and inputs over 4 KiB.
-3. Forward only the task as JSON to GitHub's `workflow_dispatch` API with `ref=main`, using job-scoped `contents:read` and `actions:write`. Never execute the task as shell or print its contents in logs.
-4. Preserve the original harness security boundaries: no persisted Git credentials for agent, isolated validation, trusted guard, patch identity checks, human-reviewed PRs, and no auto-merge.
+Use a bridge workflow triggered by `issues: opened`. GitHub loads issues-triggered workflow code from the **default `main` branch**, preventing a request branch from replacing the validator. Accept only issues whose titles begin with `[AI-FIRST] ` and whose authenticated author is repository owner `WillianZanutoOliveira`.
+
+The issue body must start with `<!-- ai-first-request:v1 -->` and include a nonempty UTF-8 task of **10–4096 bytes**. `scripts/ai-first-request-dispatch.py` rechecks the author and rejects control characters; `tests/ai_request_bridge/` covers the contract. Untrusted issue text is never interpolated into shell source.
+
+The bridge's job-scoped token has only `contents:read` and `actions:write`, and posts to `/actions/workflows/ai-evolution.yml/dispatches` with JSON `ref: main` and `inputs.task`. The original `engineer → validate → publish` guardrails and no-auto-merge behavior stay unchanged. The request issue provides an audit trail.
 
 ## Consequences and risks
-- Collaborators with write permission to request branches may launch billable Codex/CI runs. Manage repository access and budgets; audit GitHub Actions.
-- External GitHub App `push` triggers must be confirmed with a real run. Pushes performed using another workflow's `GITHUB_TOKEN` normally do not start subsequent Actions workflows.
-- The bridge still depends on the harness's `OPENAI_API_KEY` secret and `publish` permissions. Diagnose failures rather than bypassing governance.
-- If a native dispatch capability becomes available in the connector, this bridge can be retired after a reviewed migration.
+- Only the repository owner can request an execution. If the connector attributes created issues to a bot account, dispatch is skipped until proven safe.
+- Issue task text is public; never put secrets, PII, or sensitive data there. The bridge never receives `OPENAI_API_KEY`.
+- Apply Codex/CI spending limits. Edits or comments do not retrigger the issue's `opened` event.
+- GitHub permits `GITHUB_TOKEN` to trigger `workflow_dispatch`; repo policy may block `actions:write` and should not be bypassed.
+- Protected workflow/governance changes require explicit human review and approval before merging.
 
 ## Acceptance
-Human governance approval and green checks; create an `ai-requests/<id>` branch from ChatGPT; verify the bridge starts a `main` AI Evolution Harness run with the same task; ensure `engineer`, `validate`, `publish` and independent CI/Security/DAST checks pass, with no automatic merge.
+Green CI/Security, human review, manual merge, a harmless owner-authored issue with the marker, demonstrated bridge and harness execution on `main`, green `engineer`/`validate`/`publish` and independent checks, and a review-only PR with no automatic merge.

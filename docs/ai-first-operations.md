@@ -36,20 +36,30 @@ Actions de terceiros são referenciadas por SHA fixo. O harness aceita disparo m
 
 ## Disparo pelo conector GitHub do ChatGPT (ponte com revisão humana)
 
-A integração GitHub disponível neste chat pode criar **branches e arquivos**, mas atualmente **não disponibiliza** uma ação direta para `workflow_dispatch`. A proposta de governança [`.github/workflows/ai-evolution-request.yml`](../.github/workflows/ai-evolution-request.yml) cria uma ponte usando `push` em uma branch de solicitação. **Ela só entra em funcionamento após revisão e merge humano da mudança de governança na `main`.**
+A conexão GitHub disponível no ChatGPT já cria **issues** em nome da conta autenticada, mas não fornece uma operação nativa de `workflow_dispatch`. A proposta [`.github/workflows/ai-evolution-request.yml`](../.github/workflows/ai-evolution-request.yml) usa o evento **`issues: opened`**, executado pelo GitHub a partir do código confiável na **`main`**, para iniciar o harness existente sem enviar tokens ao chat. **A ponte só funciona depois da revisão e do merge humano do PR de governança.**
 
-### Como solicitar uma execução pelo chat
+### Protocolo para iniciar pelo chat
 
-1. Peça ao ChatGPT: **"Inicie o AI-First para [tarefa pequena e específica]"**. Com o conector GitHub já conectado, o assistente deverá criar uma **nova branch** no formato `ai-requests/<identificador-unico>` partindo da `main`.
-2. Na branch, o assistente deverá **adicionar somente** o arquivo `.ai-requests/task.md`, contendo a instrução, em **um único commit de adição**. Não criar ou modificar workflows, segredos, código nem outros arquivos nessa solicitação; não reutilizar uma branch anterior.
-3. O workflow intermediário, se estiver ativo, verifica que o pai do commit pertence ao histórico da `main`, que o commit **apenas adicionou** o arquivo permitido e que a tarefa é UTF-8, não vazia e limitada a **4 KiB**. Ele usa o `GITHUB_TOKEN` **somente** com `contents:read` e `actions:write`, para chamar a API de `workflow_dispatch` do `ai-evolution.yml` em `main`.
-4. Confirme o disparo em [GitHub Actions — AI Evolution Harness](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/workflows/ai-evolution.yml) e acompanhe `engineer → validate → publish`. A ponte **não cria nem aprova PR de código, não executa tarefas diretamente e não faz merge**; ela só solicita o início do harness existente.
+1. Peça ao ChatGPT: **"Inicie o AI-First para [tarefa pequena e específica]"**. O assistente deverá criar **uma issue nova** no repositório, com título iniciado exatamente por `[AI-FIRST] `.
+2. O corpo da issue deve iniciar exatamente com a linha `<!-- ai-first-request:v1 -->`, seguida de uma linha em branco e da tarefa em texto UTF-8 (entre 10 e 4096 bytes). **Não inclua segredos ou dados privados**, pois a issue ficará visível no GitHub. Exemplo:
 
-A branch de solicitação é **apenas um envelope de instrução**, não um PR a ser mesclado; pode ser excluída pelo mantenedor após confirmação do disparo. O workflow mantém rastreabilidade do ator do `push`, ID de execução e SHA. Um `push` realizado pelo **`GITHUB_TOKEN` de outro workflow** normalmente não dispara workflows novos; a ponte destina-se a um `push` externo autenticado pela conexão GitHub App. Um teste real é obrigatório para validar esse comportamento e as permissões na instalação utilizada.
+   ```markdown
+   <!-- ai-first-request:v1 -->
 
-**Limites de segurança:** o conector não ganhou uma nova função nativa e não recebeu permissão irrestrita de Actions. O repositório continua responsável por autenticar quem pode fazer `push` em branches de solicitação; quem tiver essa permissão poderá pedir execuções, com custo de CI/Codex. Mantenha colaboradores com escrita sob controle, configure orçamentos e limites da API, e considere regras adicionais de aprovação quando necessário. O job intermediário não recebe `OPENAI_API_KEY`; somente o `engineer` do harness usa o segredo já configurado. Se `actions:write` for bloqueado nas configurações de Actions, a ponte falhará de forma visível e deverá ser ajustada por um mantenedor, **não contornada**.
+   Crie somente dois novos arquivos de documentação de teste,
+   docs/ai-first-github-bridge-smoke.md e
+   docs/ai-first-github-bridge-smoke.en.md.
+   Não altere outros arquivos e não faça merge.
+   ```
 
-O endpoint oficial do GitHub utilizado é `POST /repos/{owner}/{repo}/actions/workflows/ai-evolution.yml/dispatches` com `ref=main` e `inputs.task`. A alternativa manual `Run workflow` documentada abaixo continua disponível.
+3. O workflow roda **somente para issues abertas pela conta proprietária** `WillianZanutoOliveira` com o título permitido. O validador [`scripts/ai-first-request-dispatch.py`](../scripts/ai-first-request-dispatch.py) verifica autor, formato, limites de tamanho e caracteres de controle, e prepara JSON sem executar o texto como shell.
+4. O job limita seu `GITHUB_TOKEN` a `contents: read` e `actions: write`, chama `workflow_dispatch` do `ai-evolution.yml` com `ref=main`, e preserva `engineer → validate → publish` e revisão humana antes do merge.
+
+**A issue é um pedido auditável, não uma autorização de merge.** Somente o evento `opened` aciona o bridge: editar, comentar ou reabrir a mesma issue não inicia uma segunda execução. O fluxo não modifica o código de produção, não dá acesso a `OPENAI_API_KEY` ao bridge e não altera os guardrails do harness.
+
+**Limitações e controles:** autenticação do conector precisa realmente registrar a issue com o login do proprietário; caso contrário, o job será ignorado. A conexão deve ter permissão para criar issues; `actions: write` deve estar permitido para o job no GitHub. Após o merge, **teste com uma issue inofensiva**, confirme o evento, o job bridge, a execução do harness e os checks independentes. Configure limites de custos de Codex e Actions. O GitHub documenta que eventos `issues` usam o workflow da branch padrão e que `workflow_dispatch` é uma exceção permitida para chamadas com `GITHUB_TOKEN`.
+
+A opção manual **Run workflow**, descrita a seguir, continua disponível se a configuração do repositório impedir o disparo automático.
 
 ## Primeira execução controlada
 

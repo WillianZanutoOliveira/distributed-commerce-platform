@@ -1,97 +1,56 @@
-# GOVERNANCE CHANGE: maintainer approval required before enabling this bridge.
-# ChatGPT GitHub connector can create request branches and files but does not expose
-# workflow_dispatch; a restricted push on ai-requests/** bridges into the existing
-# AI Evolution Harness workflow on main without allowing bypass or auto-merge.
+# GOVERNANCE CHANGE: independent human approval required before merging.
+# GitHub Issues are handled from default branch (trusted workflow code).
+# A GitHub App-connected ChatGPT can open an issue but cannot call
+# workflow_dispatch directly. The issue bridge has narrowly scoped permissions.
 name: AI-First GitHub Request Bridge
 
 on:
-  push:
-    branches:
-      - 'ai-requests/**'
-    paths:
-      - '.ai-requests/task.md'
+  issues:
+    types: [opened]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ai-first-request-${{ github.ref }}
+  group: ai-first-request-${{ github.event.issue.number }}
   cancel-in-progress: false
 
 jobs:
   dispatch:
-    name: Validate request and dispatch main harness
+    name: Validate owner request and dispatch main harness
+    if: github.event.issue.user.login == github.repository_owner && startsWith(github.event.issue.title, '[AI-FIRST] ')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
       actions: write
     steps:
-      - name: Checkout exact request revision without persisted token
+      - name: Checkout immutable default-branch workflow and validator
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 0
           persist-credentials: false
 
-      - name: Require single new task file branched directly from trusted main
-        shell: bash
-        run: |
-          set -euo pipefail
+      - name: Validate request contract regression tests
+        run: python3 -m unittest discover -s tests/ai_request_bridge -p 'test_*.py' -v
 
-          # One new request commit on top of a main ancestor; no arbitrary branch
-          # code, workflow changes, or additional files are accepted.
-          git merge-base --is-ancestor "${GITHUB_SHA}^" origin/main || {
-            echo "AI request must branch from main; unexpected history." >&2
-            exit 1
-          }
-
-          changed="$(git diff --name-status --no-renames "${GITHUB_SHA}^" "$GITHUB_SHA")"
-          if [[ "$changed" != $'A\t.ai-requests/task.md' ]]; then
-            echo "AI request must add exactly .ai-requests/task.md in a single commit." >&2
-            exit 1
-          fi
-
-          if [[ ! -f .ai-requests/task.md || -L .ai-requests/task.md ]]; then
-            echo "A regular .ai-requests/task.md file is required." >&2
-            exit 1
-          fi
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          raw = Path(".ai-requests/task.md").read_bytes()
-          if len(raw) < 10 or len(raw) > 4096 or b"\x00" in raw:
-              raise SystemExit("Task must contain 10 to 4096 UTF-8 bytes without NUL.")
-          try:
-              task = raw.decode("utf-8")
-          except UnicodeDecodeError as exc:
-              raise SystemExit("Task must be valid UTF-8.") from exc
-          if not task.strip():
-              raise SystemExit("Task cannot be blank.")
-          PY
-
-      - name: Dispatch AI Evolution Harness from main
+      - name: Validate and forward issue task without shell interpolation
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          AI_FIRST_REQUEST_TITLE: ${{ github.event.issue.title }}
+          AI_FIRST_REQUEST_AUTHOR: ${{ github.event.issue.user.login }}
+          AI_FIRST_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          AI_FIRST_REQUEST_BODY: ${{ github.event.issue.body }}
         run: |
           set -euo pipefail
+          python3 scripts/ai-first-request-dispatch.py
+          trap 'rm -f "$RUNNER_TEMP/ai-first-dispatch.json"' EXIT
 
-          # Never interpolate the untrusted task as shell source or echo it to logs.
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          task = Path(".ai-requests/task.md").read_text(encoding="utf-8")
-          payload = {"ref": "main", "inputs": {"task": task}}
-          path = Path(os.environ["RUNNER_TEMP"]) / "ai-first-dispatch.json"
-          path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-          PY
-
+          # This POST invokes the existing engineer -> validate -> publish workflow.
+          # No arbitrary branch workflows, shell interpolation or automatic merge.
           gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/ai-evolution.yml/dispatches" \
             --input "$RUNNER_TEMP/ai-first-dispatch.json"
 
-          echo "AI Evolution Harness dispatched on main. Inspect its engineer, validate and publish jobs."
+          echo "AI Evolution Harness requested on main. Verify engineer, validate, publish and gates."
