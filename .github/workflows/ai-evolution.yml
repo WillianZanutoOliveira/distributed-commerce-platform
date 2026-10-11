@@ -261,7 +261,7 @@ jobs:
             printf '## AI-assisted change\n\nRequested task:\n\n'
             printf '%s\n\n' "$AI_TASK"
             printf 'Validation: independent job completed restore, Release build, format, tests, security invariants, Docker Compose, and a trusted governance guard.\n\n'
-            printf 'No auto-merge. Human review, CI/Security/DAST checks and normal branch protections are required before integration.\n'
+            printf 'Only new low-risk docs may merge after independent policy review and green CI/Security/DAST; code and production changes require human approval.\n'
           } > "$RUNNER_TEMP/ai-pr-body.md"
 
           gh pr create \
