@@ -53,13 +53,19 @@ jobs:
       - name: Install pinned Codex CLI
         run: npm install --global @openai/codex@0.160.0
 
+      - name: Validate Codex CLI argument compatibility
+        run: codex --ask-for-approval never exec --sandbox workspace-write --help >/dev/null
+
       - name: Run sandboxed implementation agent without repository write token
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           AI_TASK: ${{ inputs.task }}
         run: |
           PROMPT="$(cat .ai/prompts/engineer.md)"
-          codex exec --full-auto "$PROMPT
+          # Non-interactive CLI approval mode is a global option. The sandbox
+          # remains limited to writable workspace paths and the agent has no
+          # persisted repository credentials or GitHub write token.
+          codex --ask-for-approval never exec --sandbox workspace-write "$PROMPT
 
           Requested task:
           $AI_TASK"
