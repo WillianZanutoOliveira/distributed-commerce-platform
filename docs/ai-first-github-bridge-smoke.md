@@ -1,0 +1,1 @@
+Este documento é um teste inofensivo do AI-First via GitHub Issue, limitado à criação desta documentação e de sua versão em inglês. Os jobs `engineer`, `validate` e `publish` usam os controles existentes para abrir um único PR de revisão humana, sem modificar workflows, governança ou segredos e sem realizar deploy ou merge.
