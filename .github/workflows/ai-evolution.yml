@@ -70,14 +70,33 @@ jobs:
           printf '%s\n' "$OPENAI_API_KEY" | codex login --with-api-key
           codex login status
 
-      - name: Verify safe Landlock sandbox compatibility on runner
+      - name: Install Bubblewrap and scoped AppArmor sandbox profile
         shell: bash
         run: |
           set -euo pipefail
-          # Ubuntu runner's Bubblewrap backend may fail to configure loopback.
-          # Landlock remains a filesystem sandbox, not unrestricted access.
-          # Refuse to start the agent if sandboxed shell cannot read workspace.
-          codex --enable use_legacy_landlock sandbox linux -- /bin/sh -c 'test -r AGENTS.md && test -d docs && pwd >/dev/null'
+          # Ubuntu 24.04 defaults to restricting unprivileged user namespaces.
+          # Install distro-packaged bwrap and its scoped profile instead of
+          # disabling the host-wide AppArmor userns security restriction.
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            bubblewrap apparmor-profiles apparmor-utils
+          profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          if [[ ! -f "$profile" ]]; then
+            echo "Ubuntu Bubblewrap AppArmor profile is missing; refusing unsafe fallback." >&2
+            exit 1
+          fi
+          sudo install -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          command -v bwrap
+          bwrap --version
+
+      - name: Verify Bubblewrap sandbox can access checkout safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Preflight is executed inside the same sandbox backend as the
+          # non-interactive engineering agent. Fail closed on any error.
+          codex sandbox linux -- /bin/sh -c 'test -r AGENTS.md && test -d docs && pwd >/dev/null'
 
       - name: Run sandboxed implementation agent without repository write token
         env:
@@ -88,7 +107,7 @@ jobs:
           # Non-interactive CLI approval mode is a global option. The sandbox
           # remains limited to writable workspace paths and the agent has no
           # persisted repository credentials or GitHub write token.
-          codex --enable use_legacy_landlock --ask-for-approval never exec --sandbox workspace-write "$PROMPT
+          codex --ask-for-approval never exec --sandbox workspace-write "$PROMPT
 
           Requested task:
           $AI_TASK"
