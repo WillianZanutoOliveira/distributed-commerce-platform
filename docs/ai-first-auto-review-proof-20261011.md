@@ -1,0 +1,1 @@
+Este é um teste inofensivo da revisão automática do AI-First, limitado à criação de documentação em português e inglês. A revisão e a integração ficam a cargo dos jobs independentes do harness, somente se CI, Security, DAST e todas as regras aplicáveis passarem, sem deploy ou merge realizado pelo agente de implementação.

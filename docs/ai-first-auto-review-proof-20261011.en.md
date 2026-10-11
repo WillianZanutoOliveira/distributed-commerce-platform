@@ -1,0 +1,1 @@
+This is a harmless test of AI-First automatic review, limited to creating documentation in Portuguese and English. Review and integration are left to the independent harness jobs, only if CI, Security, DAST and all applicable rules pass, with no deployment or merge performed by the implementation agent.
