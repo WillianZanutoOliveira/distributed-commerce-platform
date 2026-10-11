@@ -2,6 +2,10 @@
 
 # Secure AI-First agent operations
 
+### Additional authentication finding — October 11, 2026
+
+After merging [PR #26](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/pull/26), [issue #27](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/issues/27) started [harness run #38134291188](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/runs/38134291188). The CLI accepted the options and started in the `workspace-write` sandbox, but received **HTTP 401 / `Missing bearer or basic authentication in header`**. No patch was generated; `validate` and `publish` were skipped. The observed cause is that setting `OPENAI_API_KEY` as an environment variable did not log in the pinned Codex CLI. This governance change uses `codex login --with-api-key` with the secret supplied via **stdin** in a temporary auth directory, without printing the value to logs or committing it; only the `engineer` job receives the secret. Temporary authentication is deleted at the end of the job. A new end-to-end smoke run remains required after human-reviewed governance merge.
+
 ## Operational update — October 11, 2026
 
 [PR #24](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/pull/24) merged the issue-trigger bridge to `main` (commit `fcd8479cc0d2047d08b35e58d5676bc7a579cae0`). [Issue #25](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/issues/25), created by the ChatGPT GitHub connector, successfully triggered [bridge run #38133025576](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/runs/38133025576), which dispatched [AI Evolution Harness run #38133032767](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/runs/38133032767).

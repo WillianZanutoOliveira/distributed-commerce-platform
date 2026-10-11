@@ -56,9 +56,23 @@ jobs:
       - name: Validate Codex CLI argument compatibility
         run: codex --ask-for-approval never exec --sandbox workspace-write --help >/dev/null
 
-      - name: Run sandboxed implementation agent without repository write token
+      - name: Authenticate Codex using API key from GitHub Actions secret
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$CODEX_HOME"
+          # Codex CLI does not automatically log in from OPENAI_API_KEY.
+          # Feed the key on stdin; never put it on a command line, in a repo
+          # file, or in GitHub Actions outputs or logs.
+          printf '%s\n' "$OPENAI_API_KEY" | codex login --with-api-key
+          codex login status
+
+      - name: Run sandboxed implementation agent without repository write token
+        env:
+          CODEX_HOME: ${{ runner.temp }}/codex-home
           AI_TASK: ${{ inputs.task }}
         run: |
           PROMPT="$(cat .ai/prompts/engineer.md)"
@@ -90,6 +104,12 @@ jobs:
           path: ${{ runner.temp }}/candidate.patch
           if-no-files-found: error
           retention-days: 3
+
+      - name: Remove temporary Codex authentication
+        if: always()
+        env:
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+        run: rm -rf -- "$CODEX_HOME"
 
   validate:
     needs: engineer

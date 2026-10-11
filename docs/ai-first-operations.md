@@ -2,6 +2,10 @@
 
 # Operação segura dos agentes AI-First
 
+### Registro adicional de autenticação — 11/10/2026
+
+Após o merge do [PR #26](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/pull/26), a [issue #27](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/issues/27) iniciou o [harness #38134291188](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/runs/38134291188). A CLI aceitou os argumentos e iniciou a sessão em `workspace-write`, mas recebeu **HTTP 401 / `Missing bearer or basic authentication in header`**. Não houve patch gerado: `validate` e `publish` foram ignorados. A causa observada é que definir `OPENAI_API_KEY` apenas como variável de ambiente não estabeleceu login no Codex CLI fixado. Esta correção usa `codex login --with-api-key` com o segredo via **stdin** em diretório temporário, sem publicar o valor em logs ou na árvore Git; somente o job `engineer` recebe o segredo. O diretório de autenticação é excluído no final do job. Ainda é necessário um smoke end-to-end após a revisão e o merge desta mudança de governança.
+
 ## Atualização operacional — 11/10/2026
 
 O [PR #24](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/pull/24) integrou a ponte por issue na `main` (commit `fcd8479cc0d2047d08b35e58d5676bc7a579cae0`). A [issue #25](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/issues/25), criada pelo conector GitHub do ChatGPT, iniciou com sucesso a [ponte #38133025576](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/runs/38133025576), que disparou [AI Evolution Harness #38133032767](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/runs/38133032767).
