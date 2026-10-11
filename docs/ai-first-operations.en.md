@@ -26,7 +26,7 @@ flowchart LR
 | `validate` | `contents: read`; imports the patch in an isolated runner, saves a trusted guard **before** patch application, runs Python fixtures, .NET restore/Release build/tests/format, static security checks and Compose validation |
 | `publish` | `contents: write`, `pull-requests: write`, `actions: write`; rechecks the same patch SHA-256 and guard, opens one branch/PR and dispatches CI/Security/DAST; **never merges** |
 
-Third-party GitHub Actions are pinned to commit SHAs. Execution is manual, serialized per repository, and limited to small tasks. The patch artifact is retained for three days; the workflow has no production deployment step.
+Third-party GitHub Actions are pinned to commit SHAs. The original harness accepts manual dispatch, and the reviewed GitHub request bridge described below can request the same workflow; execution remains serialized per repository and limited to small tasks. The patch artifact is retained for three days; the workflow has no production deployment step.
 
 ## GitHub prerequisites
 
@@ -34,12 +34,39 @@ Third-party GitHub Actions are pinned to commit SHAs. Execution is manual, seria
 2. In **Settings → Actions → General**, check `GITHUB_TOKEN` permissions and whether GitHub Actions is allowed to create pull requests. The `publish` job needs contents/PR write scopes and permission to dispatch workflows; avoid unnecessarily broad repository-wide privileges.
 3. Verify `main` is selected and the current revision has completed CI/Security checks. The documentation connection **cannot inspect secrets or guarantee that these permissions have been configured**.
 
+## Triggering from the ChatGPT GitHub connector (human-reviewed bridge)
+
+ChatGPT's connected GitHub account can already create **issues**, but the connector does not expose the native `workflow_dispatch` operation. The proposed [`.github/workflows/ai-evolution-request.yml`](../.github/workflows/ai-evolution-request.yml) uses **`issues: opened`**, which GitHub runs using **trusted default-branch workflow code**, to start the existing harness without exposing access tokens to the chat. **This becomes active only after human governance review and merge.**
+
+### Requesting a run from chat
+
+1. Ask ChatGPT: **"Start AI-First for [one small, specific task]"**. The assistant creates **one new issue**, whose title starts with `[AI-FIRST] `.
+2. The issue body must start with the exact line `<!-- ai-first-request:v1 -->`, followed by a blank line and 10–4096 UTF-8 bytes of task text. **Do not include secrets or personal data** because the issue is visible on GitHub. For example:
+
+   ```markdown
+   <!-- ai-first-request:v1 -->
+
+   Create only two new harmless smoke-test documents,
+   docs/ai-first-github-bridge-smoke.md and
+   docs/ai-first-github-bridge-smoke.en.md.
+   Do not modify other files or merge.
+   ```
+
+3. The bridge runs **only when the repository owner** `WillianZanutoOliveira` opens an issue with the prefix. The validator [`scripts/ai-first-request-dispatch.py`](../scripts/ai-first-request-dispatch.py) rechecks ownership, format, byte limits, and control characters, then produces a JSON dispatch payload without executing the task as shell commands.
+4. Its job-scoped `GITHUB_TOKEN` has only `contents: read` and `actions: write`, calls `workflow_dispatch` on `ai-evolution.yml` with `ref=main`, and preserves `engineer → validate → publish` plus human merge review.
+
+**The issue is an auditable request, not merge permission.** Only the `opened` event triggers the bridge: edits, comments, and reopening do not dispatch again. The bridge cannot change production code, never receives `OPENAI_API_KEY`, and does not alter the harness's guardrails.
+
+**Limitations and controls:** the connector must actually attribute created issues to the repository owner; otherwise, the job is skipped. The connection needs permission to create issues, and the job needs `actions: write`. Following merge, **create a harmless test issue** and verify the issue event, bridge run, actual harness run, and independent checks. Apply Codex and Actions spending limits. GitHub documents that `issues` workflows run from the default branch and that `workflow_dispatch` calls from `GITHUB_TOKEN` can trigger new runs.
+
+The existing manual **Run workflow** option below remains available if GitHub permissions block the automated bridge.
+
 ## First controlled run
 
 1. Open [Actions → AI Evolution Harness](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/workflows/ai-evolution.yml), choose **Run workflow**, select `main`, and enter:
 
    ```text
-   Create only docs/ai-first-smoke-test.md and docs/ai-first-smoke-test.en.md,
+   Create only docs/ai-first-github-bridge-smoke.md and docs/ai-first-github-bridge-smoke.en.md,
    explaining in Portuguese and English that this is a harmless AI-First
    workflow test. Do not modify other files, include private data, or merge.
    ```

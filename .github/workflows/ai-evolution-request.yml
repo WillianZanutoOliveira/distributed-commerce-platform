@@ -1,0 +1,56 @@
+# GOVERNANCE CHANGE: independent human approval required before merging.
+# GitHub Issues are handled from default branch (trusted workflow code).
+# A GitHub App-connected ChatGPT can open an issue but cannot call
+# workflow_dispatch directly. The issue bridge has narrowly scoped permissions.
+name: AI-First GitHub Request Bridge
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-first-request-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Validate owner request and dispatch main harness
+    if: github.event.issue.user.login == github.repository_owner && startsWith(github.event.issue.title, '[AI-FIRST] ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Checkout immutable default-branch workflow and validator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Validate request contract regression tests
+        run: python3 -m unittest discover -s tests/ai_harness -p 'test_ai_request_bridge.py' -v
+
+      - name: Validate and forward issue task without shell interpolation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AI_FIRST_REQUEST_TITLE: ${{ github.event.issue.title }}
+          AI_FIRST_REQUEST_AUTHOR: ${{ github.event.issue.user.login }}
+          AI_FIRST_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          AI_FIRST_REQUEST_BODY: ${{ github.event.issue.body }}
+        run: |
+          set -euo pipefail
+          python3 scripts/ai-first-request-dispatch.py
+          trap 'rm -f "$RUNNER_TEMP/ai-first-dispatch.json"' EXIT
+
+          # This POST invokes the existing engineer -> validate -> publish workflow.
+          # No arbitrary branch workflows, shell interpolation or automatic merge.
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ai-evolution.yml/dispatches" \
+            --input "$RUNNER_TEMP/ai-first-dispatch.json"
+
+          echo "AI Evolution Harness requested on main. Verify engineer, validate, publish and gates."
