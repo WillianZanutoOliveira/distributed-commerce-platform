@@ -2,7 +2,15 @@
 
 # Operação segura dos agentes AI-First
 
-## Situação verificada — 10/10/2026
+## Atualização operacional — 11/10/2026
+
+O [PR #24](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/pull/24) integrou a ponte por issue na `main` (commit `fcd8479cc0d2047d08b35e58d5676bc7a579cae0`). A [issue #25](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/issues/25), criada pelo conector GitHub do ChatGPT, iniciou com sucesso a [ponte #38133025576](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/runs/38133025576), que disparou [AI Evolution Harness #38133032767](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/runs/38133032767).
+
+A tentativa original falhou porque `OPENAI_API_KEY` estava ausente. **Depois que o mantenedor configurou o secret**, a segunda tentativa do mesmo run passou em `Require OpenAI API credential` e instalou o Codex, mas o `engineer` falhou ao executar `codex exec --full-auto`: a CLI fixada em `@openai/codex@0.160.0` retornou `unexpected argument '--full-auto' found`. Assim, `validate` e `publish` não executaram. O PR desta correção coloca as opções de aprovação em posição global (`codex --ask-for-approval never exec --sandbox workspace-write`) e introduz uma checagem de compatibilidade da CLI antes do agente. Mantém o sandbox de escrita no workspace, sem credenciais Git persistidas e sem permitir auto-merge.
+
+**Estado:** disparo e secret validados; a implementação de ponta a ponta ainda exige nova execução na `main` com a correção aprovada e mergeada, seguida de `engineer → validate → publish`, criação de PR e CI/Security/DAST verdes. Não registrar este ciclo como concluído apenas pelo sucesso da ponte.
+
+## Histórico da implantação — 10/10/2026
 
 **Workflow instalado na `main`; execução ponta a ponta ainda não comprovada.** O mantenedor integrou os [PRs #17](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/pull/17), [#18](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/pull/18) e [#19](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/pull/19). O workflow ativo é [.github/workflows/ai-evolution.yml](../.github/workflows/ai-evolution.yml), presente na `main` desde o commit `d5f76b272d3b02826bd7b16eb4d032412bc5a015`.
 
