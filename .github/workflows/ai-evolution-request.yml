@@ -32,7 +32,7 @@ jobs:
           persist-credentials: false
 
       - name: Validate request contract regression tests
-        run: python3 -m unittest discover -s tests/ai_request_bridge -p 'test_*.py' -v
+        run: python3 -m unittest discover -s tests/ai_harness -p 'test_ai_request_bridge.py' -v
 
       - name: Validate and forward issue task without shell interpolation
         shell: bash

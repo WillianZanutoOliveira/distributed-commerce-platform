@@ -11,7 +11,7 @@ The `AI Evolution Harness` on `main` accepts `workflow_dispatch` and `inputs.tas
 ## Decision
 Use a bridge workflow triggered by `issues: opened`. GitHub loads issues-triggered workflow code from the **default `main` branch**, preventing a request branch from replacing the validator. Accept only issues whose titles begin with `[AI-FIRST] ` and whose authenticated author is repository owner `WillianZanutoOliveira`.
 
-The issue body must start with `<!-- ai-first-request:v1 -->` and include a nonempty UTF-8 task of **10–4096 bytes**. `scripts/ai-first-request-dispatch.py` rechecks the author and rejects control characters; `tests/ai_request_bridge/` covers the contract. Untrusted issue text is never interpolated into shell source.
+The issue body must start with `<!-- ai-first-request:v1 -->` and include a nonempty UTF-8 task of **10–4096 bytes**. `scripts/ai-first-request-dispatch.py` rechecks the author and rejects control characters; `tests/ai_harness/` covers the contract. Untrusted issue text is never interpolated into shell source.
 
 The bridge's job-scoped token has only `contents:read` and `actions:write`, and posts to `/actions/workflows/ai-evolution.yml/dispatches` with JSON `ref: main` and `inputs.task`. The original `engineer → validate → publish` guardrails and no-auto-merge behavior stay unchanged. The request issue provides an audit trail.
 

@@ -11,7 +11,7 @@ O `AI Evolution Harness` da `main` recebe `workflow_dispatch` com `inputs.task`,
 ## Decisão
 Adicionar um workflow de ponte com gatilho `issues: opened`. O GitHub carrega esse evento a partir da **branch padrão `main`**, evitando que código de uma branch de solicitação modifique o próprio validador. O job só aceita issues cujo título comece com `[AI-FIRST] ` e cujo autor autenticado seja `WillianZanutoOliveira`.
 
-O corpo precisa começar com `<!-- ai-first-request:v1 -->` e conter uma tarefa não vazia entre **10 e 4096 bytes UTF-8**. O helper `scripts/ai-first-request-dispatch.py` também recusa caracteres de controle e verifica o autor novamente, com testes de regressão em `tests/ai_request_bridge/`. Nenhuma instrução da issue é interpolada como shell.
+O corpo precisa começar com `<!-- ai-first-request:v1 -->` e conter uma tarefa não vazia entre **10 e 4096 bytes UTF-8**. O helper `scripts/ai-first-request-dispatch.py` também recusa caracteres de controle e verifica o autor novamente, com testes de regressão em `tests/ai_harness/`. Nenhuma instrução da issue é interpolada como shell.
 
 O token é **restrito ao job**, com `contents:read` e `actions:write`; envia POST ao endpoint `/actions/workflows/ai-evolution.yml/dispatches` passando `ref: main` e `inputs.task` como JSON. O fluxo `engineer → validate → publish` permanece inalterado e sem auto-merge. A issue permanece no histórico como auditoria.
 
