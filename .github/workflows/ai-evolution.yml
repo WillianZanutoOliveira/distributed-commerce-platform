@@ -96,7 +96,7 @@ jobs:
           set -euo pipefail
           # Preflight is executed inside the same sandbox backend as the
           # non-interactive engineering agent. Fail closed on any error.
-          codex sandbox linux -- /bin/sh -c 'test -r AGENTS.md && test -d docs && pwd >/dev/null'
+          codex sandbox -- /bin/sh -c 'test -r AGENTS.md && test -d docs && pwd >/dev/null'
 
       - name: Run sandboxed implementation agent without repository write token
         env:

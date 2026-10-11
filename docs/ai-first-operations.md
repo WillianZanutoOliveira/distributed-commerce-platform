@@ -2,6 +2,10 @@
 
 # Operação segura dos agentes AI-First
 
+### Correção da sintaxe do preflight — 11/10/2026
+
+O [harness #38153935585](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/runs/38153935585), solicitado pela [issue #33](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/issues/33), passou pela instalação de `bubblewrap 0.9.0` e pelo carregamento do perfil AppArmor, mas falhou no preflight devido à sintaxe: `codex sandbox linux --` tentou executar um binário chamado `linux` e retornou `Failed to execvp linux`. A CLI `0.160.0` utiliza `codex sandbox -- COMANDO` neste modo. A correção substitui apenas a chamada de teste por `codex sandbox -- /bin/sh ...`. Não altera isolamento, permissões, segredo ou parâmetros de inferência. Precisa de um teste real em `main` após revisão.
+
 ### Atualização do runner Ubuntu — 11/10/2026
 
 A [issue #31](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/issues/31) acionou corretamente o [AI Evolution Harness #38153271880](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/runs/38153271880), mas o preflight Landlock do Codex falhou com `filesystem-restricted execution requires bubblewrap to isolate app-server sockets`. O job `engineer` terminou sem executar o agente. Esse resultado invalida a alternativa Landlock isolada testada no PR #30 neste runner.
