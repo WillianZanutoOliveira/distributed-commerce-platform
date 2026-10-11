@@ -6,7 +6,7 @@ The AI harness exists to accelerate small, reviewable improvements while keeping
 
 ## Non-negotiable rules
 
-1. Human-reviewed delivery — AI may create a branch and pull request. It never merges its own work.
+1. Governed delivery — AI engineers may only propose a branch and PR. A separate immutable, trusted policy reviewer may automatically merge strictly eligible new Markdown documentation after independent CI, Security and DAST success; all code, migrations, deploy, security, architecture and governance changes retain human merge approval.
 2. Green quality gates — build and automated tests must pass before a pull request is created.
 3. Least privilege — automation receives only the repository permissions required to create its branch and PR.
 4. Architecture preservation — service ownership, Clean Architecture boundaries, outbox/inbox and idempotency must not be weakened.
@@ -22,7 +22,7 @@ The AI harness exists to accelerate small, reviewable improvements while keeping
 14. Service-default preservation — readiness/liveness, service discovery, HTTP resilience and edge rate limiting remain centralized unless a human-reviewed ADR explicitly replaces them.
 15. Migration privilege separation — runtime database identities remain DML-only and schema changes are applied only through the separate Vault-backed migration identity.
 16. Executable architecture — architecture/contract/chaos tests cannot be removed or weakened merely to make a change pass.
-17. Reviewable GitOps delivery — production promotion remains pull-request driven; AI cannot introduce automatic merge or imperative production deployment.
+17. Reviewable GitOps delivery — production promotion remains pull-request driven; AI cannot introduce automatic merge for application/production changes or imperative production deployment. Low-risk new Markdown documentation may use only the separate verified auto-review policy.
 18. Progressive delivery preservation — migration-before-rollout and canary analysis gates remain in place unless a human-reviewed ADR replaces them.
 19. Governance cannot rewrite itself — the agent cannot edit the harness policy or workflow that governs it.
 
@@ -35,4 +35,4 @@ An AI-generated PR should explain:
 - validation performed;
 - remaining trade-offs or follow-up work.
 
-The reviewer remains responsible for correctness and merge approval.
+Outside the narrow, separately protected docs-only automated policy, a human reviewer remains responsible for merge approval. AI engineers cannot modify the reviewer policy or approve their own production code.

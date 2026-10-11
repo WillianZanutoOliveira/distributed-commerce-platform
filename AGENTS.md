@@ -66,7 +66,7 @@ Before changing code, read:
 - Run restore, build and tests before considering work complete.
 - Update Portuguese and English documentation together when public behavior or architecture changes.
 - Do not perform unrelated refactors.
-- Do not auto-merge or push directly to main.
+- The engineering agent must never merge or push directly to main. A separate trusted governance-owned reviewer may automatically merge only new, low-risk Markdown documentation after all independent CI/Security/DAST checks; code and production changes still require explicit human review.
 
 ## Protected governance files
 
@@ -76,6 +76,8 @@ AI automation must not modify these files unless a human explicitly performs a s
 - .ai/engineering-constitution.md
 - .ai/prompts/engineer.md
 - .github/workflows/ai-evolution.yml
+- scripts/ai-first-automerge.py
+- tests/ai_harness/test_ai_automerge.py
 - .github/workflows/security.yml
 - .github/workflows/scorecard.yml
 - .github/workflows/release.yml

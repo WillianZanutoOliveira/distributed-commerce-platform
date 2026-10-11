@@ -1,0 +1,321 @@
+# GOVERNANCE CHANGE: activation requires separate maintainer review before merge.
+name: AI Evolution Harness
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "Small, reviewable engineering task for the AI agent"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-evolution-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  engineer:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout immutable base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+
+      - name: Require OpenAI API credential
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "Set the repository secret OPENAI_API_KEY before running this workflow." >&2
+            exit 1
+          fi
+
+      - name: Install pinned Codex CLI
+        run: npm install --global @openai/codex@0.160.0
+
+      - name: Validate Codex CLI argument compatibility
+        run: codex --ask-for-approval never exec --sandbox workspace-write --help >/dev/null
+
+      - name: Authenticate Codex using API key from GitHub Actions secret
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$CODEX_HOME"
+          # Codex CLI does not automatically log in from OPENAI_API_KEY.
+          # Feed the key on stdin; never put it on a command line, in a repo
+          # file, or in GitHub Actions outputs or logs.
+          printf '%s\n' "$OPENAI_API_KEY" | codex login --with-api-key
+          codex login status
+
+      - name: Install Bubblewrap and scoped AppArmor sandbox profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Ubuntu 24.04 defaults to restricting unprivileged user namespaces.
+          # Install distro-packaged bwrap and its scoped profile instead of
+          # disabling the host-wide AppArmor userns security restriction.
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            bubblewrap apparmor-profiles apparmor-utils
+          profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          if [[ ! -f "$profile" ]]; then
+            echo "Ubuntu Bubblewrap AppArmor profile is missing; refusing unsafe fallback." >&2
+            exit 1
+          fi
+          sudo install -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          command -v bwrap
+          bwrap --version
+
+      - name: Verify Bubblewrap sandbox can access checkout safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Preflight is executed inside the same sandbox backend as the
+          # non-interactive engineering agent. Fail closed on any error.
+          codex sandbox -- /bin/sh -c 'test -r AGENTS.md && test -d docs && pwd >/dev/null'
+
+      - name: Run sandboxed implementation agent without repository write token
+        env:
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+          AI_TASK: ${{ inputs.task }}
+        run: |
+          PROMPT="$(cat .ai/prompts/engineer.md)"
+          # Non-interactive CLI approval mode is a global option. The sandbox
+          # remains limited to writable workspace paths and the agent has no
+          # persisted repository credentials or GitHub write token.
+          codex --ask-for-approval never exec --sandbox workspace-write "$PROMPT
+
+          Requested task:
+          $AI_TASK"
+
+      - name: Export a patch relative to the immutable pre-agent commit
+        run: |
+          git add -A
+          git diff --cached --binary "$GITHUB_SHA" -- > "$RUNNER_TEMP/candidate.patch"
+          if [ ! -s "$RUNNER_TEMP/candidate.patch" ]; then
+            echo "The AI agent did not produce a reviewable repository change." >&2
+            exit 1
+          fi
+          if [ "$(wc -c < "$RUNNER_TEMP/candidate.patch")" -gt 10485760 ]; then
+            echo "AI patch exceeds the 10 MiB review limit." >&2
+            exit 1
+          fi
+
+      - name: Upload immutable patch for independent validation
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ai-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/candidate.patch
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Remove temporary Codex authentication
+        if: always()
+        env:
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+        run: rm -rf -- "$CODEX_HOME"
+
+  validate:
+    needs: engineer
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    permissions:
+      contents: read
+    outputs:
+      patch_sha256: ${{ steps.verify_patch.outputs.sha256 }}
+    steps:
+      - name: Checkout immutable base without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Preserve trusted guard from base before applying untrusted patch
+        run: cp scripts/ai-change-guard.py "$RUNNER_TEMP/trusted-guard.py"
+
+      - name: Download proposed patch
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: ai-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}
+
+      - name: Apply patch and fail closed on protected paths
+        id: verify_patch
+        run: |
+          git apply --check --index "$RUNNER_TEMP/candidate.patch"
+          git apply --index "$RUNNER_TEMP/candidate.patch"
+          python3 "$RUNNER_TEMP/trusted-guard.py" --repo . --base-sha "$GITHUB_SHA"
+          echo "sha256=$(sha256sum "$RUNNER_TEMP/candidate.patch" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Validate guard regression fixtures
+        run: python3 -m unittest discover -s tests/ai_harness -p 'test_*.py' -v
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore DistributedCommerce.slnx
+
+      - name: Release build
+        run: dotnet build DistributedCommerce.slnx --configuration Release --no-restore
+
+      - name: Validate static security invariants
+        run: bash scripts/security-config-check.sh
+
+      - name: Verify formatting and analyzers
+        run: dotnet format DistributedCommerce.slnx --verify-no-changes --no-restore --severity warn
+
+      - name: Automated tests
+        run: dotnet test DistributedCommerce.slnx --configuration Release --no-build --verbosity normal
+
+      - name: Validate secure Compose topology
+        run: |
+          cp .env.example .env
+          docker compose -f docker-compose.yml -f docker-compose.vault.yml config >/dev/null
+
+  publish:
+    needs: validate
+    outputs:
+      pr_number: ${{ steps.publish_pr.outputs.number }}
+      head_sha: ${{ steps.publish_pr.outputs.sha }}
+      branch: ${{ steps.publish_pr.outputs.branch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write # dispatch CI/Security/DAST for GITHUB_TOKEN-created PRs
+    steps:
+      - name: Checkout immutable base without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Preserve trusted guard before patch import
+        run: cp scripts/ai-change-guard.py "$RUNNER_TEMP/trusted-guard.py"
+
+      - name: Download validated immutable patch
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: ai-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}
+
+      - name: Verify patch identity, apply and re-run trusted guard
+        env:
+          VERIFIED_SHA256: ${{ needs.validate.outputs.patch_sha256 }}
+        run: |
+          actual="$(sha256sum "$RUNNER_TEMP/candidate.patch" | cut -d ' ' -f 1)"
+          if [ -z "$VERIFIED_SHA256" ] || [ "$actual" != "$VERIFIED_SHA256" ]; then
+            echo "Patch identity differs from the validated artifact." >&2
+            exit 1
+          fi
+          git apply --check --index "$RUNNER_TEMP/candidate.patch"
+          git apply --index "$RUNNER_TEMP/candidate.patch"
+          python3 "$RUNNER_TEMP/trusted-guard.py" --repo . --base-sha "$GITHUB_SHA"
+
+      - name: Publish exactly one review-only branch and pull request
+        id: publish_pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AI_TASK: ${{ inputs.task }}
+        run: |
+          BRANCH="ai/evolution-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          TITLE="$(printf '%s' "$AI_TASK" | head -n 1 | cut -c 1-80)"
+          git config user.name "distributed-commerce-ai"
+          git config user.email "distributed-commerce-ai@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git commit -m "AI-assisted evolution: $TITLE"
+          gh auth setup-git
+          git push --set-upstream origin "$BRANCH"
+
+          {
+            printf '## AI-assisted change\n\nRequested task:\n\n'
+            printf '%s\n\n' "$AI_TASK"
+            printf 'Validation: independent job completed restore, Release build, format, tests, security invariants, Docker Compose, and a trusted governance guard.\n\n'
+            printf 'No auto-merge. Human review, CI/Security/DAST checks and normal branch protections are required before integration.\n'
+          } > "$RUNNER_TEMP/ai-pr-body.md"
+
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "AI-assisted evolution: $TITLE" \
+            --body-file "$RUNNER_TEMP/ai-pr-body.md"
+
+          # Trusted reviewer consumes the exact PR/commit identity. Both were
+          # generated only after the independently validated immutable patch.
+          echo "number=$(gh pr view "$BRANCH" --json number --jq .number)" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+          # GITHUB_TOKEN-created PR events may require workflow approval.
+          # Explicit workflow_dispatch on the generated branch runs all independent
+          # checks. Failure to schedule any check fails this publisher job.
+          for workflow in ci.yml security.yml dast.yml; do
+            gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
+          done
+
+  automated-review:
+    name: Policy review and conditional docs-only merge
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+    steps:
+      - name: Checkout trusted main review policy, never PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Test automated review fail-closed policy
+        run: python3 -m unittest discover -s tests/ai_harness -p 'test_ai_automerge.py' -v
+
+      - name: Independently review and merge eligible docs after all gates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.publish.outputs.pr_number }}
+          PR_HEAD: ${{ needs.publish.outputs.head_sha }}
+          PR_BRANCH: ${{ needs.publish.outputs.branch }}
+          TRUSTED_BASE: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ai-first-automerge.py \
+            --pr-number "$PR_NUMBER" \
+            --head-sha "$PR_HEAD" \
+            --branch "$PR_BRANCH" \
+            --trusted-base "$TRUSTED_BASE" \
+            --harness-run-id "$GITHUB_RUN_ID"

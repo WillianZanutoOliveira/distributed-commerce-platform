@@ -130,10 +130,14 @@ def policy_check(repo: str, number: int, head_sha: str, branch: str,
     files = api(repo, f"pulls/{number}/files?per_page=100")
     if not isinstance(files, list) or len(files) != changed:
         raise PolicyFailure("Could not inspect all changed PR files.")
-    tree = api(repo, f"git/trees/{head_sha}?recursive=1")
+    commit_tree = api(repo, f"git/commits/{head_sha}")
+    tree_sha = commit_tree.get("tree", {}).get("sha")
+    if not tree_sha:
+        raise PolicyFailure("Cannot verify the immutable Git tree.")
+    tree = api(repo, f"git/trees/{tree_sha}?recursive=1")
     evaluate_files(files, tree)
     reviews = api(repo, f"pulls/{number}/reviews?per_page=100")
-    if not isinstance(reviews, list) or any(
+    if not isinstance(reviews, list) or len(reviews) >= 100 or any(
         x.get("state") in {"CHANGES_REQUESTED", "DISMISSED"} for x in reviews
     ):
         raise PolicyFailure("A blocking or dismissed human review exists.")

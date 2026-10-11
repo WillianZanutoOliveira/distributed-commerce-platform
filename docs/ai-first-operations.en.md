@@ -2,6 +2,14 @@
 
 # Secure AI-First agent operations
 
+## Conditional automated review (new policy)
+
+The owner requested removing the manual AI-First PR review step. ADR-0016 proposes a **new-docs-only, low-risk** independent policy-review job after engineer, validate and publish. It verifies Actions bot authorship, immutable base/head SHA, narrowly allowed changed paths and green, independently dispatched CI, Security and DAST runs for the exact same commit. Only then may GitHub merge without human action; any mismatch fails closed or leaves the PR open.
+
+**Initial policy:** 1–4 newly added .md files under docs/ (excluding ADRs, governance and security), at most 250 added lines, no deletions or symlinks. Code, migrations, authentication, workflows and deployment changes are ineligible. Production promotion must remain protected. Existing branch rules requiring review cannot be bypassed. This is **deterministic policy review plus tests**, not a second AI code review.
+
+See [ADR-0016](adr/0016-ai-first-conditional-automerge.en.md) and the [reviewer script](../scripts/ai-first-automerge.py). Actual activation requires the separate governance merge and a real smoke run. The previous PR #38 proved automatic PR creation and green CI/Security/DAST, **not** hands-free merging.
+
 ### Sandbox preflight syntax fix — October 11, 2026
 
 [Harness #38153935585](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/actions/runs/38153935585), requested by [issue #33](https://github.com/WillianZanutoOliveira/distributed-commerce-platform/issues/33), installed `bubblewrap 0.9.0` and loaded the AppArmor profile successfully, but its preflight used incompatible syntax: `codex sandbox linux --` tried to run an executable named `linux` and returned `Failed to execvp linux`. The pinned CLI `0.160.0` expects `codex sandbox -- COMMAND` in this mode. This patch only changes the preflight invocation to `codex sandbox -- /bin/sh ...`; isolation, permissions, secrets and inference flags are unchanged. A real post-review `main` run is still required.
