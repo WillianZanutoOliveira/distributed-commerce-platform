@@ -1,0 +1,1 @@
+This document is a harmless AI-First smoke test via GitHub Issue, limited to creating this documentation and its Portuguese version. The `engineer`, `validate`, and `publish` jobs use the existing controls to open a single PR for human review, without modifying workflows, governance, or secrets and without deploying or merging.
