@@ -88,6 +88,22 @@ services:
     volumes:
       - customers-data:/var/lib/postgresql
 
+  products-db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: products
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:5436:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d products"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - products-data:/var/lib/postgresql
+
   orders-migrator:
     build:
       context: .
@@ -130,6 +146,17 @@ services:
       ConnectionStrings__customers-db: "Host=customers-db;Port=5432;Database=customers;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
     depends_on:
       customers-db:
+        condition: service_healthy
+
+  products-migrator:
+    build:
+      context: .
+      dockerfile: src/Platform/DatabaseMigrator/Dockerfile
+    environment:
+      MIGRATION_TARGET: products
+      ConnectionStrings__products-db: "Host=products-db;Port=5432;Database=products;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+    depends_on:
+      products-db:
         condition: service_healthy
 
   orders-api:
@@ -184,6 +211,29 @@ services:
     ports:
       - "127.0.0.1:8085:8080"
 
+  products-api:
+    build:
+      context: .
+      dockerfile: src/Services/Products/Products.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__products-db: "Host=products-db;Port=5432;Database=products;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Keycloak__Authority: "http://keycloak:8080/realms/distributed-commerce"
+      Keycloak__MetadataAddress: "http://keycloak:8080/realms/distributed-commerce/.well-known/openid-configuration"
+      Keycloak__Issuer: "http://localhost:8180/realms/distributed-commerce"
+      Keycloak__Audience: "distributed-commerce-api"
+      Keycloak__RequireHttpsMetadata: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+    depends_on:
+      keycloak:
+        condition: service_started
+      products-db:
+        condition: service_healthy
+      products-migrator:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:8086:8080"
+
   api-gateway:
     build:
       context: .
@@ -197,6 +247,7 @@ services:
       Keycloak__RequireHttpsMetadata: "false"
       ReverseProxy__Clusters__orders-cluster__Destinations__primary__Address: "http://orders-api:8080/"
       ReverseProxy__Clusters__customers-cluster__Destinations__primary__Address: "http://customers-api:8080/"
+      ReverseProxy__Clusters__products-cluster__Destinations__primary__Address: "http://products-api:8080/"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
     depends_on:
       keycloak:
@@ -204,6 +255,8 @@ services:
       orders-api:
         condition: service_started
       customers-api:
+        condition: service_started
+      products-api:
         condition: service_started
     ports:
       - "127.0.0.1:8080:8080"
@@ -318,5 +371,6 @@ volumes:
   inventory-data:
   payments-data:
   customers-data:
+  products-data:
   tempo-data:
   grafana-data:

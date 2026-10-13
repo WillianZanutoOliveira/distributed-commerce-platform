@@ -11,6 +11,10 @@
   <Project Path="src/Services/Customers/Customers.Application/Customers.Application.csproj" />
   <Project Path="src/Services/Customers/Customers.Infrastructure/Customers.Infrastructure.csproj" />
   <Project Path="src/Services/Customers/Customers.Api/Customers.Api.csproj" />
+  <Project Path="src/Services/Products/Products.Domain/Products.Domain.csproj" />
+  <Project Path="src/Services/Products/Products.Application/Products.Application.csproj" />
+  <Project Path="src/Services/Products/Products.Infrastructure/Products.Infrastructure.csproj" />
+  <Project Path="src/Services/Products/Products.Api/Products.Api.csproj" />
   <Project Path="src/Services/Orders/Orders.Domain/Orders.Domain.csproj" />
   <Project Path="src/Services/Orders/Orders.Application/Orders.Application.csproj" />
   <Project Path="src/Services/Orders/Orders.Infrastructure/Orders.Infrastructure.csproj" />
@@ -18,6 +22,8 @@
   <Project Path="src/Services/Inventory/Inventory.Service/Inventory.Service.csproj" />
   <Project Path="src/Services/Payments/Payments.Service/Payments.Service.csproj" />
   <Project Path="src/Services/Notifications/Notifications.Service/Notifications.Service.csproj" />
+  <Project Path="tests/Products.Domain.Tests/Products.Domain.Tests.csproj" />
+  <Project Path="tests/Products.Infrastructure.Tests/Products.Infrastructure.Tests.csproj" />
   <Project Path="tests/Customers.Domain.Tests/Customers.Domain.Tests.csproj" />
   <Project Path="tests/Customers.Infrastructure.Tests/Customers.Infrastructure.Tests.csproj" />
   <Project Path="tests/Orders.Domain.Tests/Orders.Domain.Tests.csproj" />

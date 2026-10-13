@@ -34,6 +34,9 @@ public sealed class LocalTopologyTests
             "customers-api",
             "customers-db",
             "customers-migrator",
+            "products-api",
+            "products-db",
+            "products-migrator",
             "inventory-db",
             "inventory-migrator",
             "inventory-service",
@@ -53,6 +56,7 @@ public sealed class LocalTopologyTests
         var requiredSecretResources = new[]
         {
             "customers-db-password",
+            "products-db-password",
             "inventory-db-password",
             "keycloak-admin-password",
             "orders-db-password",
